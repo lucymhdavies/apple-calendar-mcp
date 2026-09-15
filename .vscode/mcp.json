@@ -2,12 +2,12 @@
   "servers": {
     "outlook-calendar": {
       "type": "stdio",
-      "command": "go",
-      "args": ["run", "./cmd/server"],
-      "cwd": "${workspaceFolder}",
+      "command": "${workspaceFolder}/.build/release/CalendarMCP.app/Contents/MacOS/CalendarMCP",
+      "args": [],
       "env": {
         "CALENDAR_NAME": "Calendar"
-      }
+      },
+      "timeout": 30000
     }
   }
 }

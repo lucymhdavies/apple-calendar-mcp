@@ -1,12 +1,12 @@
 {
   "mcpServers": {
     "outlook-calendar": {
-      "command": "/Users/strawb/git_src/github.com/lucymhdavies/apple-calendar-mcp/server",
+      "command": "/Users/strawb/git_src/github.com/lucymhdavies/apple-calendar-mcp/.build/release/CalendarMCP.app/Contents/MacOS/CalendarMCP",
       "args": [],
       "env": {
         "CALENDAR_NAME": "Calendar"
       },
-      "timeout": 300000,
+      "timeout": 30000,
       "alwaysAllow": [
         "get_event",
         "get_freebusy",

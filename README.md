@@ -7,7 +7,8 @@ A read-only MCP server for calendar data synced into macOS Calendar.app. It is d
 1. Sign in to the IBM account in macOS Calendar.app.
 2. Confirm the calendar appears in Calendar.app.
 3. Open this workspace in VS Code.
-4. Start or reload the `outlook-calendar` MCP server when VS Code offers it.
+4. Build the Swift server with `./scripts/build-release.sh`.
+5. Start or reload the `outlook-calendar` MCP server when VS Code offers it.
 
 The workspace configuration is in `.vscode/mcp.json`:
 
@@ -16,9 +17,8 @@ The workspace configuration is in `.vscode/mcp.json`:
   "servers": {
     "outlook-calendar": {
       "type": "stdio",
-      "command": "go",
-      "args": ["run", "./cmd/server"],
-      "cwd": "${workspaceFolder}",
+      "command": "${workspaceFolder}/.build/release/CalendarMCP.app/Contents/MacOS/CalendarMCP",
+      "args": [],
       "env": { "CALENDAR_NAME": "Calendar" }
     }
   }
@@ -36,21 +36,10 @@ Bob can use the same workspace MCP server. No Microsoft Graph token or Azure app
 
 Descriptions can contain meeting links, dial-in details, and passcodes. Treat MCP results as private calendar data.
 
-## Local Probe
-
-For a direct JSON check outside MCP:
-
-```bash
-go run ./cmd/calendar-local-probe -days 1 -limit 10
-```
-
-## Backend status
-
-The default backend is macOS Calendar.app via AppleScript. Microsoft Graph is retained as an optional future backend, but IBM's tenant requires preauthorization for standalone Graph clients. Outlook ICS publishing was unavailable for this tenant.
+Use `list_events` through the MCP panel for the same direct calendar check.
 
 ## Development
 
 ```bash
-go test ./...
-go run ./cmd/server
+./scripts/build-release.sh
 ```
