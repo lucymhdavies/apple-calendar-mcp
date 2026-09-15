@@ -3,6 +3,8 @@ package mcpserver
 import (
 	"context"
 	"fmt"
+	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -10,6 +12,8 @@ import (
 	"github.com/lucymhdavies/outlook-calendar/internal/types"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+var logger = log.New(os.Stderr, "[outlook-calendar] ", log.LstdFlags)
 
 type Server struct {
 	backend backend.Backend
@@ -79,37 +83,65 @@ type freeBusyOutput struct {
 }
 
 func (server *Server) listCalendars(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, calendarsOutput, error) {
+	logger.Print("list_calendars: start")
+	start := time.Now()
 	calendars, err := server.backend.ListCalendars(ctx)
-	return nil, calendarsOutput{Calendars: calendars}, err
+	if err != nil {
+		logger.Printf("list_calendars: error after %s: %v", time.Since(start).Round(time.Millisecond), err)
+		return nil, calendarsOutput{}, err
+	}
+	logger.Printf("list_calendars: done in %s, returned %d calendars", time.Since(start).Round(time.Millisecond), len(calendars))
+	return nil, calendarsOutput{Calendars: calendars}, nil
 }
 
 func (server *Server) listEvents(ctx context.Context, _ *mcp.CallToolRequest, input listEventsInput) (*mcp.CallToolResult, eventsOutput, error) {
 	from, to, err := parseRange(input.From, input.To)
 	if err != nil {
+		logger.Printf("list_events: bad range from=%q to=%q: %v", input.From, input.To, err)
 		return nil, eventsOutput{}, err
 	}
+	logger.Printf("list_events: start from=%s to=%s limit=%d", from.Format(time.RFC3339), to.Format(time.RFC3339), input.Limit)
+	start := time.Now()
 	events, err := server.backend.ListEvents(ctx, from, to)
 	if err != nil {
+		logger.Printf("list_events: error after %s: %v", time.Since(start).Round(time.Millisecond), err)
 		return nil, eventsOutput{}, err
 	}
 	if input.Limit > 0 && len(events) > input.Limit {
 		events = events[:input.Limit]
 	}
+	logger.Printf("list_events: done in %s, returned %d events", time.Since(start).Round(time.Millisecond), len(events))
 	return nil, eventsOutput{Events: events}, nil
 }
 
 func (server *Server) getEvent(ctx context.Context, _ *mcp.CallToolRequest, input getEventInput) (*mcp.CallToolResult, eventOutput, error) {
-	event, err := server.backend.GetEvent(ctx, strings.TrimSpace(input.ID))
-	return nil, eventOutput{Event: event}, err
+	id := strings.TrimSpace(input.ID)
+	logger.Printf("get_event: start id=%q", id)
+	start := time.Now()
+	event, err := server.backend.GetEvent(ctx, id)
+	if err != nil {
+		logger.Printf("get_event: error after %s: %v", time.Since(start).Round(time.Millisecond), err)
+		return nil, eventOutput{}, err
+	}
+	logger.Printf("get_event: done in %s", time.Since(start).Round(time.Millisecond))
+	return nil, eventOutput{Event: event}, nil
 }
 
 func (server *Server) getFreeBusy(ctx context.Context, _ *mcp.CallToolRequest, input freeBusyInput) (*mcp.CallToolResult, freeBusyOutput, error) {
 	from, to, err := parseRange(input.From, input.To)
 	if err != nil {
+		logger.Printf("get_freebusy: bad range from=%q to=%q: %v", input.From, input.To, err)
 		return nil, freeBusyOutput{}, err
 	}
+	logger.Printf("get_freebusy: start from=%s to=%s emails=%v", from.Format(time.RFC3339), to.Format(time.RFC3339), input.Emails)
+	start := time.Now()
 	results, err := server.backend.GetFreeBusy(ctx, input.Emails, from, to)
-	return nil, freeBusyOutput{Results: results}, err
+	if err != nil {
+		logger.Printf("get_freebusy: error after %s: %v", time.Since(start).Round(time.Millisecond), err)
+		return nil, freeBusyOutput{}, err
+	}
+	logger.Printf("get_freebusy: done in %s, returned %d results", time.Since(start).Round(time.Millisecond), len(results))
+	return nil, freeBusyOutput{Results: results}, nil
 }
 
 func parseRange(fromValue, toValue string) (time.Time, time.Time, error) {

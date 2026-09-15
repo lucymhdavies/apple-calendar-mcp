@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -11,6 +13,8 @@ import (
 
 	"github.com/lucymhdavies/outlook-calendar/internal/types"
 )
+
+var logger = log.New(os.Stderr, "[outlook-calendar] ", log.LstdFlags)
 
 const (
 	fieldSep  = byte(31)
@@ -111,14 +115,20 @@ func (b *Backend) GetFreeBusy(ctx context.Context, emails []string, from, to tim
 }
 
 func (b *Backend) run(ctx context.Context, script string) (string, error) {
+	logger.Print("osascript: start")
+	start := time.Now()
 	command := exec.CommandContext(ctx, "osascript", "-e", script)
 	out, err := command.Output()
+	elapsed := time.Since(start).Round(time.Millisecond)
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
+			logger.Printf("osascript: failed after %s: %s", elapsed, strings.TrimSpace(string(exitErr.Stderr)))
 			return "", fmt.Errorf("Calendar.app query failed: %s", strings.TrimSpace(string(exitErr.Stderr)))
 		}
+		logger.Printf("osascript: error after %s: %v", elapsed, err)
 		return "", fmt.Errorf("run osascript: %w", err)
 	}
+	logger.Printf("osascript: done in %s, output %d bytes", elapsed, len(out))
 	return string(out), nil
 }
 
@@ -221,7 +231,7 @@ with timeout of 300 seconds
   set fieldSeparator to character id 31
   set attendeeSeparator to character id 30
   set attendeeFieldSeparator to character id 29
-  set matchingEvents to every event of calendar "%[1]s" whose start date < windowEnd and end date > windowStart
+  set matchingEvents to every event of calendar "%[1]s" whose start date < windowEnd and end date > windowStart - 365 * days
   set output to ""
   repeat with currentEvent in matchingEvents
    set attendeeOutput to ""
