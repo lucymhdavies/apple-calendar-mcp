@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "outlook-calendar": {
+      "type": "stdio",
+      "command": "go",
+      "args": ["run", "./cmd/server"],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "CALENDAR_NAME": "Calendar"
+      }
+    }
+  }
+}

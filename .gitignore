@@ -1,0 +1,15 @@
+# Secrets / credentials
+token.json
+cache.json
+*.env
+
+# Compiled binaries
+/cmd/login/login
+/cmd/server/server
+outlook-calendar
+/login
+/outlook-local-probe
+
+# Go build artifacts
+*.test
+*.out
