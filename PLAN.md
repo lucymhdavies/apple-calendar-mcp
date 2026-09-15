@@ -303,9 +303,10 @@ is ample (vs the 300s needed for osascript):
 4. **Write `Sources/CalendarMCP/Logging.swift`** — simple stderr logger.
 
 5. **Write `Sources/CalendarMCP/main.swift`** — MCP server entry point:
-   - Read `CALENDAR_NAME` from env
+   - Read `CALENDAR_NAME` from env (default `"Calendar"` if unset, matching Go behaviour)
    - Request EventKit access (await; exit 1 on denial)
-   - Construct `Server` with `tools` capability
+   - Construct `Server` with name `"outlook-calendar"`, title `"Outlook Calendar"`,
+     version `"0.1.0"`, description `"Read-only access to calendars synced into macOS Calendar."`
    - Register `ListTools` and `CallTool` handlers
    - Start with `StdioTransport`
 
@@ -318,6 +319,44 @@ is ample (vs the 300s needed for osascript):
 9. **Reconnect in Bob MCP panel** and test all four tools.
 
 10. **Verify recurring events are returned** for `list_events` tomorrow.
+
+---
+
+## Additional Implementation Details
+
+### `CALENDAR_NAME` scoping
+`list_events`, `get_event`, and `get_freebusy` must filter to only the named calendar.
+In EventKit, look up the `EKCalendar` where `calendar.title == calendarName`, then pass
+`[calendar]` to `predicateForEvents(withStart:end:calendars:)`. If no matching calendar
+is found, return an error.
+
+`list_calendars` lists **all** event calendars (`calendars(for: .event)`), regardless of
+`CALENDAR_NAME` — matching the Go behaviour.
+
+### `get_event` — trim whitespace on ID
+Match the Go server: trim leading/trailing whitespace from the event ID before passing
+to `EKEventStore.event(withIdentifier:)`.
+
+### `list_events` — guard empty range
+If `from >= to` after parsing, return an empty events array immediately (don't call
+EventKit). Match the Go backend's early-return for invalid ranges.
+
+### `parseRange` defaults
+- `from` defaults to `Date()` (now)
+- `to` defaults to `from + 24h`
+- Error if `from >= to`
+
+### Server identity fields
+Match the Go `mcp.Implementation` exactly:
+- Name: `"outlook-calendar"`
+- Title: `"Outlook Calendar"`
+- Version: `"0.1.0"`
+- Description: `"Read-only access to calendars synced into macOS Calendar."`
+
+### `calendar-local-probe` equivalent
+The README documents `go run ./cmd/calendar-local-probe` as a direct JSON debugging
+tool. It won't exist after the Swift rewrite. Update the README to remove that
+reference and note that `list_events` via the Bob MCP panel serves the same purpose.
 
 ---
 
