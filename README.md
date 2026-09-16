@@ -1,6 +1,6 @@
-# Outlook Calendar MCP
+# CalendarAPI
 
-A read-only MCP server for calendar data synced into macOS Calendar.app. It is designed for VS Code MCP clients and IBM Bob.
+A read-only calendar API for data synced into macOS Calendar.app. It supports MCP clients such as VS Code and IBM Bob, as well as direct REST consumers.
 
 ## Setup
 
@@ -8,7 +8,7 @@ A read-only MCP server for calendar data synced into macOS Calendar.app. It is d
 2. Confirm the calendar appears in Calendar.app.
 3. Open this workspace in VS Code.
 4. Build the Swift server with `./scripts/build-release.sh`.
-5. Start or reload the `outlook-calendar` MCP server when VS Code offers it.
+5. Start or reload the `calendar-api` MCP server when VS Code offers it.
 
 To run the REST API as a menu bar app instead, launch the packaged executable
 with `REST_ENABLED=true`. It starts on `127.0.0.1:8765` by default:
@@ -18,15 +18,19 @@ REST_ENABLED=true .build/release/CalendarMCP.app/Contents/MacOS/CalendarMCP
 ```
 
 The menu bar item starts the API automatically and provides controls to stop it,
-restart it, expose it to the LAN, copy its URL, or quit. Set `REST_HOST`,
-`REST_PORT`, and `CALENDAR_NAME` to customize the listener.
+restart it, expose it to the LAN, configure the port, choose the calendar, copy
+its URL, or quit. The selected port and calendar are persisted in
+`UserDefaults`. `REST_HOST`, `REST_PORT`, and `CALENDAR_NAME` provide startup
+defaults for environments without menu-bar interaction.
 
 By default, the API binds only to `127.0.0.1` and does not require
 authentication. Use **Expose API to LAN** in the menu to bind to all local
 interfaces. The app generates a random API key, stores it in the macOS
 Keychain, and shows it for copying. The LAN preference is stored in
 `UserDefaults`, so both the LAN setting and API key persist across app restarts
-and login startup.
+and login startup. LAN mode also publishes a Bonjour `_http._tcp` service named
+`CalendarAPI`, allowing clients to discover the current port without relying on
+the configured port number.
 
 LAN requests must send the key as a bearer token:
 
@@ -34,6 +38,16 @@ LAN requests must send the key as a bearer token:
 curl -H 'Authorization: Bearer YOUR_API_KEY' \
   http://YOUR-MAC-IP:8765/v1/calendars
 ```
+
+To discover the advertised service from another Mac:
+
+```bash
+dns-sd -B _http._tcp local
+dns-sd -L CalendarAPI _http._tcp local
+```
+
+The discovered service resolves to the API's current host and port. Clients
+still need the bearer token for all endpoints except `/health`.
 
 `/health` remains available without authentication. To configure LAN access
 before the menu bar app starts, set `REST_HOST=0.0.0.0` and provide a
@@ -66,7 +80,7 @@ The workspace configuration is in `.vscode/mcp.json`:
 ```json
 {
   "servers": {
-    "outlook-calendar": {
+    "calendar-api": {
       "type": "stdio",
       "command": "${workspaceFolder}/.build/release/CalendarMCP.app/Contents/MacOS/CalendarMCP",
       "args": [],
@@ -88,6 +102,14 @@ Bob can use the same workspace MCP server. No Microsoft Graph token or Azure app
 Descriptions can contain meeting links, dial-in details, and passcodes. Treat MCP results as private calendar data.
 
 ## REST API
+
+The complete wire-level reference, including JSON schemas, query parameters,
+authentication, and errors, is in [docs/api.md](docs/api.md).
+
+Services with a browser frontend should perform Bonjour discovery in their
+backend and proxy CalendarAPI requests. Browser JavaScript cannot browse mDNS
+services directly; keeping discovery and the bearer token in the backend also
+avoids requiring CORS on this local API.
 
 The read-only API uses these endpoints:
 

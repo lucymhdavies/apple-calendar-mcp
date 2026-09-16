@@ -14,9 +14,7 @@ struct RESTConfiguration {
     ) throws -> RESTConfiguration {
         let host = environment["REST_HOST"] ?? "127.0.0.1"
         let portValue = environment["REST_PORT"] ?? "8765"
-        guard let port = UInt16(portValue), port > 0 else {
-            throw RESTServerError.invalidConfiguration("REST_PORT must be between 1 and 65535")
-        }
+        let port = try port(from: portValue)
         let token = environment["REST_TOKEN"]
         let isLoopback = ["127.0.0.1", "localhost", "::1"].contains(host.lowercased())
         guard isLoopback || token.map({ $0.count >= 16 }) == true else {
@@ -24,6 +22,13 @@ struct RESTConfiguration {
                 "REST_TOKEN must be at least 16 characters when REST_HOST is not loopback")
         }
         return RESTConfiguration(host: host, port: port, token: token)
+    }
+
+    static func port(from value: String) throws -> UInt16 {
+        guard let port = UInt16(value), port > 0 else {
+            throw RESTServerError.invalidConfiguration("API port must be between 1 and 65535")
+        }
+        return port
     }
 
     static var isEnabled: Bool {
@@ -35,8 +40,8 @@ struct RESTConfiguration {
         ["127.0.0.1", "localhost", "::1"].contains(host.lowercased())
     }
 
-    func binding(host: String, token: String?) -> RESTConfiguration {
-        RESTConfiguration(host: host, port: port, token: token)
+    func binding(host: String, token: String?, port: UInt16? = nil) -> RESTConfiguration {
+        RESTConfiguration(host: host, port: port ?? self.port, token: token)
     }
 }
 
@@ -113,6 +118,9 @@ enum RESTServerError: LocalizedError {
     }
 }
 
+private let bonjourServiceName = "CalendarAPI"
+private let bonjourServiceType = "_http._tcp"
+
 private struct CalendarsResponse: Encodable {
     let calendars: [CalendarInfo]
 }
@@ -158,15 +166,17 @@ private struct HTTPResponse {
 final class RESTServer: @unchecked Sendable {
     let service: CalendarService
     let configuration: RESTConfiguration
+    let advertiseBonjour: Bool
     var onStateChange: (@Sendable (Bool) -> Void)?
 
     private let queue = DispatchQueue(label: "CalendarMCP.RESTServer")
     private var listener: NWListener?
     private(set) var isRunning = false
 
-    init(service: CalendarService, configuration: RESTConfiguration) {
+    init(service: CalendarService, configuration: RESTConfiguration, advertiseBonjour: Bool = false) {
         self.service = service
         self.configuration = configuration
+        self.advertiseBonjour = advertiseBonjour
     }
 
     func start() throws {
@@ -179,6 +189,10 @@ final class RESTServer: @unchecked Sendable {
         parameters.requiredLocalEndpoint = .hostPort(
             host: NWEndpoint.Host(configuration.host), port: port)
         let listener = try NWListener(using: parameters, on: .any)
+        if advertiseBonjour {
+            listener.service = NWListener.Service(
+                name: bonjourServiceName, type: bonjourServiceType, domain: nil, txtRecord: nil)
+        }
         listener.newConnectionHandler = { [weak self] connection in
             self?.handle(connection)
         }
@@ -364,21 +378,34 @@ final class RESTServer: @unchecked Sendable {
 }
 
 private let lanEnabledDefaultsKey = "REST_LAN_ENABLED"
+private let portDefaultsKey = "REST_PORT"
+private let calendarNameDefaultsKey = "CALENDAR_NAME"
 
 @MainActor
 final class MenuBarController: NSObject, NSApplicationDelegate {
-    private let service: CalendarService
+    private var service: CalendarService
     private let configuration: RESTConfiguration
     private var server: RESTServer?
     private var statusItem: NSStatusItem!
     private var statusMenuItem: NSMenuItem!
     private var lanMenuItem: NSMenuItem!
+    private var portMenuItem: NSMenuItem!
+    private var calendarMenuItem: NSMenuItem!
     private var copyURLMenuItem: NSMenuItem!
     private var lanEnabled = UserDefaults.standard.bool(forKey: lanEnabledDefaultsKey)
+    private var configuredPort: UInt16
 
     init(service: CalendarService, configuration: RESTConfiguration) {
         self.service = service
         self.configuration = configuration
+        let savedPort = UserDefaults.standard.integer(forKey: portDefaultsKey)
+        configuredPort = savedPort > 0 && savedPort <= Int(UInt16.max)
+            ? UInt16(savedPort) : configuration.port
+        if let savedCalendar = UserDefaults.standard.string(forKey: calendarNameDefaultsKey),
+            !savedCalendar.isEmpty
+        {
+            self.service.calendarName = savedCalendar
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -393,6 +420,14 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
             title: "Expose API to LAN", action: #selector(toggleLAN), keyEquivalent: "")
         lanMenuItem.target = self
         menu.addItem(lanMenuItem)
+        portMenuItem = NSMenuItem(
+            title: "Configure API Port...", action: #selector(configurePort), keyEquivalent: "")
+        portMenuItem.target = self
+        menu.addItem(portMenuItem)
+        calendarMenuItem = NSMenuItem(
+            title: "Choose Calendar...", action: #selector(configureCalendar), keyEquivalent: "")
+        calendarMenuItem.target = self
+        menu.addItem(calendarMenuItem)
         copyURLMenuItem = NSMenuItem(
             title: "Copy Local API URL", action: #selector(copyURL), keyEquivalent: "")
         copyURLMenuItem.target = self
@@ -403,6 +438,58 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
         menu.addItem(quitItem)
         statusItem.menu = menu
         startServer()
+    }
+
+    @objc private func configurePort() {
+        let field = NSTextField(string: String(configuredPort))
+        field.frame.size.width = 180
+        let alert = NSAlert()
+        alert.messageText = "Configure API port"
+        alert.informativeText = "Choose a port between 1 and 65535. The API will restart."
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Apply")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        do {
+            let port = try RESTConfiguration.port(from: field.stringValue)
+            configuredPort = port
+            UserDefaults.standard.set(Int(port), forKey: portDefaultsKey)
+            restartServer()
+        } catch {
+            showError(error.localizedDescription)
+        }
+    }
+
+    @objc private func configureCalendar() {
+        Task { @MainActor in
+            let calendars = await service.backend.listCalendars()
+            guard !calendars.isEmpty else {
+                showError("No calendars are available in Calendar.app.")
+                return
+            }
+
+            let picker = NSPopUpButton(frame: .zero, pullsDown: false)
+            picker.addItems(withTitles: calendars.map(\.name))
+            if let index = calendars.firstIndex(where: { $0.name == service.calendarName }) {
+                picker.selectItem(at: index)
+            }
+            picker.sizeToFit()
+
+            let alert = NSAlert()
+            alert.messageText = "Choose calendar"
+            alert.informativeText = "Select the calendar used by the API. The API will restart."
+            alert.accessoryView = picker
+            alert.addButton(withTitle: "Apply")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn,
+                let selectedName = picker.selectedItem?.title
+            else { return }
+
+            service.calendarName = selectedName
+            UserDefaults.standard.set(selectedName, forKey: calendarNameDefaultsKey)
+            restartServer()
+        }
     }
 
     @objc private func toggleServer() {
@@ -436,7 +523,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
     @objc private func copyURL() {
         NSPasteboard.general.clearContents()
         let host = lanEnabled ? localIPAddress() : "127.0.0.1"
-        NSPasteboard.general.setString("http://\(host):\(configuration.port)", forType: .string)
+        NSPasteboard.general.setString("http://\(host):\(configuredPort)", forType: .string)
     }
 
     @objc private func quit() {
@@ -449,15 +536,16 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
         if lanEnabled {
             do {
                 serverConfiguration = configuration.binding(
-                    host: "0.0.0.0", token: try APIKeyStore.getOrCreate())
+                    host: "0.0.0.0", token: try APIKeyStore.getOrCreate(), port: configuredPort)
             } catch {
                 showError(error.localizedDescription)
                 return
             }
         } else {
-            serverConfiguration = configuration.binding(host: "127.0.0.1", token: nil)
+            serverConfiguration = configuration.binding(host: "127.0.0.1", token: nil, port: configuredPort)
         }
-        let server = RESTServer(service: service, configuration: serverConfiguration)
+        let server = RESTServer(
+            service: service, configuration: serverConfiguration, advertiseBonjour: lanEnabled)
         self.server = server
         updateMenu(running: false)
         server.onStateChange = { [weak self, weak server] running in
@@ -528,6 +616,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
     private func updateMenu(running: Bool) {
         statusMenuItem.title = running ? "Stop API" : "Start API"
         lanMenuItem.title = lanEnabled ? "Disable LAN API" : "Expose API to LAN"
+        calendarMenuItem.title = "Calendar: \(service.calendarName)"
         copyURLMenuItem.title = lanEnabled ? "Copy LAN API URL" : "Copy Local API URL"
         updateStatusIcon(running: running)
     }

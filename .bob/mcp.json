@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "outlook-calendar": {
+    "calendar-api": {
       "command": "/Users/strawb/git_src/github.com/lucymhdavies/apple-calendar-mcp/.build/release/CalendarMCP.app/Contents/MacOS/CalendarMCP",
       "args": [],
       "env": {

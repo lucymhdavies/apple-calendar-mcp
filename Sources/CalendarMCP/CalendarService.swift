@@ -3,7 +3,7 @@ import MCP
 
 struct CalendarService {
     let backend: CalendarBackend
-    let calendarName: String
+    var calendarName: String
 
     func listCalendars() async -> [CalendarInfo] {
         await backend.listCalendars()

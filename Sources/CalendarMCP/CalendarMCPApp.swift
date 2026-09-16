@@ -32,7 +32,7 @@ struct CalendarMCP {
         }
 
         let server = Server(
-            name: "outlook-calendar", version: "0.1.1", capabilities: .init(tools: .init()))
+            name: "calendar-api", version: "0.1.2", capabilities: .init(tools: .init()))
         await server.withMethodHandler(ListTools.self) { _ in
             .init(tools: toolDefinitions)
         }

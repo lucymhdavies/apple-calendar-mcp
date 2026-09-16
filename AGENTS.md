@@ -2,7 +2,7 @@
 
 ## Project
 
-This is a macOS Swift 6 executable that reads EventKit calendars and exposes the same read-only calendar service through:
+This is a macOS Swift 6 executable that reads EventKit calendars and exposes the same read-only CalendarAPI service through:
 
 - MCP stdio mode for VS Code and IBM Bob.
 - An optional REST server owned by a menu bar application.

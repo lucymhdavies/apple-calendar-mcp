@@ -58,6 +58,16 @@ final class MainTests: XCTestCase {
         XCTAssertNil(configuration.token)
     }
 
+    func testRESTConfigurationAcceptsValidPort() throws {
+        XCTAssertEqual(try RESTConfiguration.port(from: "9000"), 9000)
+    }
+
+    func testRESTConfigurationRejectsInvalidPort() {
+        XCTAssertThrowsError(try RESTConfiguration.port(from: "0"))
+        XCTAssertThrowsError(try RESTConfiguration.port(from: "65536"))
+        XCTAssertThrowsError(try RESTConfiguration.port(from: "not-a-port"))
+    }
+
     func testRESTConfigurationRequiresTokenForNonLoopbackHost() {
         XCTAssertThrowsError(
             try RESTConfiguration.fromEnvironment([

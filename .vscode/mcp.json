@@ -1,6 +1,6 @@
 {
   "servers": {
-    "outlook-calendar": {
+    "calendar-api": {
       "type": "stdio",
       "command": "${workspaceFolder}/.build/release/CalendarMCP.app/Contents/MacOS/CalendarMCP",
       "args": [],

@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented here.
 
+## [0.1.2] - 2026-09-16
+
+### Added
+
+- CalendarAPI public naming for the app, MCP registration, logs, and Bonjour service.
+- Bonjour `_http._tcp` discovery for LAN clients without a fixed port.
+- Menu-bar configuration for the API port and selected calendar.
+- API documentation for backend services that discover CalendarAPI and proxy requests to it.
+
+### Changed
+
+- The MCP transport is documented as one mode of the broader CalendarAPI service.
+
 ## [0.1.1] - 2026-09-16
 
 ### Added
