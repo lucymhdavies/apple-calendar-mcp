@@ -22,6 +22,26 @@ restart it, copy its URL, or quit. Set `REST_HOST`, `REST_PORT`, and
 `CALENDAR_NAME` to customize the listener. Non-loopback hosts also require
 `REST_TOKEN` with at least 16 characters; send it as a bearer token.
 
+To start the REST menu bar app automatically when you log in, build the release
+app and install its per-user LaunchAgent:
+
+```bash
+./scripts/build-release.sh
+./scripts/install-launch-agent.sh
+```
+
+The login service uses the default loopback listener and keeps the app running
+if it exits. Remove it with:
+
+```bash
+./scripts/uninstall-launch-agent.sh
+```
+
+The LaunchAgent writes logs to `~/Library/Logs/CalendarMCP`. LAN configuration
+such as `REST_HOST`, `REST_PORT`, and `REST_TOKEN` should be added to the
+generated `~/Library/LaunchAgents/com.lucymhdavies.CalendarMCP.plist` before
+starting the service.
+
 The workspace configuration is in `.vscode/mcp.json`:
 
 ```json

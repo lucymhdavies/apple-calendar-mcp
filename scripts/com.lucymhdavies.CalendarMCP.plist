@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.lucymhdavies.CalendarMCP</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__EXECUTABLE__</string>
+        <string>--rest</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CALENDAR_NAME</key>
+        <string>Calendar</string>
+        <key>REST_ENABLED</key>
+        <string>true</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>__LOG_DIR__/CalendarMCP.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__LOG_DIR__/CalendarMCP.err.log</string>
+</dict>
+</plist>
