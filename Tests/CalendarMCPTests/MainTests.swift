@@ -1,5 +1,6 @@
 import MCP
 import XCTest
+
 @testable import CalendarMCP
 
 final class MainTests: XCTestCase {
@@ -58,20 +59,33 @@ final class MainTests: XCTestCase {
     }
 
     func testRESTConfigurationRequiresTokenForNonLoopbackHost() {
-        XCTAssertThrowsError(try RESTConfiguration.fromEnvironment([
-            "REST_HOST": "192.168.1.10",
-            "REST_PORT": "8765"
-        ]))
+        XCTAssertThrowsError(
+            try RESTConfiguration.fromEnvironment([
+                "REST_HOST": "192.168.1.10",
+                "REST_PORT": "8765",
+            ]))
     }
 
     func testRESTConfigurationAcceptsLongTokenForNonLoopbackHost() throws {
         let configuration = try RESTConfiguration.fromEnvironment([
             "REST_HOST": "192.168.1.10",
             "REST_PORT": "8765",
-            "REST_TOKEN": "0123456789abcdef"
+            "REST_TOKEN": "0123456789abcdef",
         ])
 
         XCTAssertEqual(configuration.host, "192.168.1.10")
+        XCTAssertEqual(configuration.token, "0123456789abcdef")
+    }
+
+    func testRESTConfigurationSupportsLANBindingWithToken() throws {
+        let configuration = try RESTConfiguration.fromEnvironment([
+            "REST_HOST": "0.0.0.0",
+            "REST_PORT": "8765",
+            "REST_TOKEN": "0123456789abcdef",
+        ])
+
+        XCTAssertFalse(configuration.isLoopback)
+        XCTAssertEqual(configuration.host, "0.0.0.0")
         XCTAssertEqual(configuration.token, "0123456789abcdef")
     }
 }

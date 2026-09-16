@@ -25,7 +25,8 @@ struct CalendarService {
         try await backend.getEvent(calendarName: calendarName, id: id ?? "")
     }
 
-    func getFreeBusy(from: String?, to: String?, emails: [String]) async throws -> [FreeBusyResult] {
+    func getFreeBusy(from: String?, to: String?, emails: [String]) async throws -> [FreeBusyResult]
+    {
         let start = try date(from, field: "from") ?? Date()
         let end = try date(to, field: "to") ?? start.addingTimeInterval(24 * 60 * 60)
         try validateRange(start, end)
@@ -39,7 +40,9 @@ struct CalendarService {
                 availability: "local",
                 busySlots: slots,
                 source: "macos-calendar",
-                note: "Derived from locally synced macOS Calendar; cross-user free/busy is unavailable.")
+                note:
+                    "Derived from locally synced macOS Calendar; cross-user free/busy is unavailable."
+            )
         }
     }
 

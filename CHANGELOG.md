@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented here.
 
+## [0.1.1] - 2026-09-16
+
+### Added
+
+- Persisted LAN exposure preference and Keychain-backed API key management.
+- Distinct menu bar status for local and LAN-exposed API modes.
+- Login startup through a per-user LaunchAgent.
+
+### Fixed
+
+- Menu bar running state now follows the active REST listener.
+- Documented LAN authentication and login startup behavior.
+
 ## [0.1.0] - 2026-09-16
 
 ### Added

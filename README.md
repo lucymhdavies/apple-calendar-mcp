@@ -18,9 +18,26 @@ REST_ENABLED=true .build/release/CalendarMCP.app/Contents/MacOS/CalendarMCP
 ```
 
 The menu bar item starts the API automatically and provides controls to stop it,
-restart it, copy its URL, or quit. Set `REST_HOST`, `REST_PORT`, and
-`CALENDAR_NAME` to customize the listener. Non-loopback hosts also require
-`REST_TOKEN` with at least 16 characters; send it as a bearer token.
+restart it, expose it to the LAN, copy its URL, or quit. Set `REST_HOST`,
+`REST_PORT`, and `CALENDAR_NAME` to customize the listener.
+
+By default, the API binds only to `127.0.0.1` and does not require
+authentication. Use **Expose API to LAN** in the menu to bind to all local
+interfaces. The app generates a random API key, stores it in the macOS
+Keychain, and shows it for copying. The LAN preference is stored in
+`UserDefaults`, so both the LAN setting and API key persist across app restarts
+and login startup.
+
+LAN requests must send the key as a bearer token:
+
+```bash
+curl -H 'Authorization: Bearer YOUR_API_KEY' \
+  http://YOUR-MAC-IP:8765/v1/calendars
+```
+
+`/health` remains available without authentication. To configure LAN access
+before the menu bar app starts, set `REST_HOST=0.0.0.0` and provide a
+`REST_TOKEN` with at least 16 characters in the LaunchAgent environment.
 
 To start the REST menu bar app automatically when you log in, build the release
 app and install its per-user LaunchAgent:
@@ -30,8 +47,10 @@ app and install its per-user LaunchAgent:
 ./scripts/install-launch-agent.sh
 ```
 
-The login service uses the default loopback listener and keeps the app running
-if it exits. Remove it with:
+The login service uses the persisted menu bar preference for its binding and
+keeps the app running if it exits. A fresh installation starts loopback-only;
+if LAN exposure was previously enabled, it resumes LAN mode with the stored key.
+Remove it with:
 
 ```bash
 ./scripts/uninstall-launch-agent.sh

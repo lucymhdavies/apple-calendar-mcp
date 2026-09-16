@@ -20,7 +20,7 @@ let package = Package(
                     "-Xlinker", "-sectcreate",
                     "-Xlinker", "__TEXT",
                     "-Xlinker", "__info_plist",
-                    "-Xlinker", "Sources/CalendarMCP/Info.plist"
+                    "-Xlinker", "Sources/CalendarMCP/Info.plist",
                 ])
             ]
         ),
@@ -28,6 +28,6 @@ let package = Package(
             name: "CalendarMCPTests",
             dependencies: ["CalendarMCP"],
             path: "Tests/CalendarMCPTests"
-        )
+        ),
     ]
 )
