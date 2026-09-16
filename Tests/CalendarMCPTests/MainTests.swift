@@ -48,4 +48,30 @@ final class MainTests: XCTestCase {
 
         XCTAssertNoThrow(try validateRange(from, to))
     }
+
+    func testRESTConfigurationDefaultsToLoopback() throws {
+        let configuration = try RESTConfiguration.fromEnvironment([:])
+
+        XCTAssertEqual(configuration.host, "127.0.0.1")
+        XCTAssertEqual(configuration.port, 8765)
+        XCTAssertNil(configuration.token)
+    }
+
+    func testRESTConfigurationRequiresTokenForNonLoopbackHost() {
+        XCTAssertThrowsError(try RESTConfiguration.fromEnvironment([
+            "REST_HOST": "192.168.1.10",
+            "REST_PORT": "8765"
+        ]))
+    }
+
+    func testRESTConfigurationAcceptsLongTokenForNonLoopbackHost() throws {
+        let configuration = try RESTConfiguration.fromEnvironment([
+            "REST_HOST": "192.168.1.10",
+            "REST_PORT": "8765",
+            "REST_TOKEN": "0123456789abcdef"
+        ])
+
+        XCTAssertEqual(configuration.host, "192.168.1.10")
+        XCTAssertEqual(configuration.token, "0123456789abcdef")
+    }
 }

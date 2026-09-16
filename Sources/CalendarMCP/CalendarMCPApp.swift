@@ -1,18 +1,7 @@
+import AppKit
+import Darwin
 import Foundation
 import MCP
-import Darwin
-
-enum ServerError: LocalizedError {
-    case invalidRange
-    case invalidDate(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .invalidRange: return "from must be before to"
-        case .invalidDate(let field): return "parse \(field) as RFC3339 failed"
-        }
-    }
-}
 
 @main
 struct CalendarMCP {
@@ -35,13 +24,20 @@ struct CalendarMCP {
         }
 
         let calendarName = ProcessInfo.processInfo.environment["CALENDAR_NAME"] ?? "Calendar"
+        let service = CalendarService(backend: backend, calendarName: calendarName)
+        if RESTConfiguration.isEnabled {
+            let configuration = try RESTConfiguration.fromEnvironment()
+            await runMenuBar(service: service, configuration: configuration)
+            return
+        }
+
         let server = Server(name: "outlook-calendar", version: "0.1.0", capabilities: .init(tools: .init()))
         await server.withMethodHandler(ListTools.self) { _ in
             .init(tools: toolDefinitions)
         }
         await server.withMethodHandler(CallTool.self) { params in
             do {
-                let output = try await callTool(params, backend: backend, calendarName: calendarName)
+                let output = try await callTool(params, service: service)
                 return .init(content: [.text(text: output, annotations: nil, _meta: nil)], isError: false)
             } catch {
                 Log.message("tool \(params.name) failed: \(error.localizedDescription)")
@@ -51,6 +47,15 @@ struct CalendarMCP {
 
         try await server.start(transport: StdioTransport())
         try await Task.sleep(for: .seconds(365 * 24 * 3600))
+    }
+
+    @MainActor
+    private static func runMenuBar(service: CalendarService, configuration: RESTConfiguration) {
+        let application = NSApplication.shared
+        application.setActivationPolicy(.accessory)
+        let delegate = MenuBarController(service: service, configuration: configuration)
+        application.delegate = delegate
+        application.run()
     }
 }
 
@@ -83,43 +88,28 @@ private let toolDefinitions = [
     ]))
 ]
 
-private func callTool(_ params: CallTool.Parameters, backend: CalendarBackend, calendarName: String) async throws -> String {
+private func callTool(_ params: CallTool.Parameters, service: CalendarService) async throws -> String {
     switch params.name {
     case "list_calendars":
-        return try encode(["calendars": await backend.listCalendars()])
+        return try encode(["calendars": await service.listCalendars()])
     case "list_events":
-        let from = try dateArgument(params, key: "from") ?? Date()
-        let to = try dateArgument(params, key: "to") ?? from.addingTimeInterval(24 * 60 * 60)
-        try validateRange(from, to)
-        var events = try await backend.listEvents(calendarName: calendarName, from: from, to: to)
-        if let limit = intArgument(params, key: "limit"), limit > 0, events.count > limit { events = Array(events.prefix(limit)) }
+        let events = try await service.listEvents(
+            from: stringArgument(params, key: "from"),
+            to: stringArgument(params, key: "to"),
+            limit: intArgument(params, key: "limit"))
         return try encode(["events": events])
     case "get_event":
         let id = stringArgument(params, key: "id") ?? ""
-        return try encode(["event": try await backend.getEvent(calendarName: calendarName, id: id)])
+        return try encode(["event": try await service.getEvent(id: id)])
     case "get_freebusy":
-        let from = try dateArgument(params, key: "from") ?? Date()
-        let to = try dateArgument(params, key: "to") ?? from.addingTimeInterval(24 * 60 * 60)
-        try validateRange(from, to)
-        let events = try await backend.listEvents(calendarName: calendarName, from: from, to: to)
-        let slots = events.map { TimeSlot(start: $0.start, end: $0.end) }
-        let emails = stringArrayArgument(params, key: "emails")
-        let labels = emails.isEmpty ? [""] : emails
-        let results = labels.map { FreeBusyResult(email: $0, availability: "local", busySlots: slots, source: "macos-calendar", note: "Derived from locally synced macOS Calendar; cross-user free/busy is unavailable.") }
+        let results = try await service.getFreeBusy(
+            from: stringArgument(params, key: "from"),
+            to: stringArgument(params, key: "to"),
+            emails: stringArrayArgument(params, key: "emails"))
         return try encode(["results": results])
     default:
         throw MCPError.invalidParams("unknown tool \(params.name)")
     }
-}
-
-func dateArgument(_ params: CallTool.Parameters, key: String) throws -> Date? {
-    guard let value = stringArgument(params, key: key), !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-    guard let date = ISO8601DateFormatter().date(from: value) else { throw ServerError.invalidDate(key) }
-    return date
-}
-
-func validateRange(_ from: Date, _ to: Date) throws {
-    guard from < to else { throw ServerError.invalidRange }
 }
 
 private func stringArgument(_ params: CallTool.Parameters, key: String) -> String? { params.arguments?[key]?.stringValue }

@@ -10,7 +10,9 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "CalendarMCP",
-            dependencies: [.product(name: "MCP", package: "swift-sdk")],
+            dependencies: [
+                .product(name: "MCP", package: "swift-sdk")
+            ],
             path: "Sources/CalendarMCP",
             exclude: ["Info.plist"],
             linkerSettings: [
