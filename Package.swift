@@ -21,6 +21,11 @@ let package = Package(
                     "-Xlinker", "Sources/CalendarMCP/Info.plist"
                 ])
             ]
+        ),
+        .testTarget(
+            name: "CalendarMCPTests",
+            dependencies: ["CalendarMCP"],
+            path: "Tests/CalendarMCPTests"
         )
     ]
 )

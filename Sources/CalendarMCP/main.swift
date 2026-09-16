@@ -42,10 +42,10 @@ struct CalendarMCP {
         await server.withMethodHandler(CallTool.self) { params in
             do {
                 let output = try await callTool(params, backend: backend, calendarName: calendarName)
-                return .init(content: [.text(text: output)], isError: false)
+                return .init(content: [.text(text: output, annotations: nil, _meta: nil)], isError: false)
             } catch {
                 Log.message("tool \(params.name) failed: \(error.localizedDescription)")
-                return .init(content: [.text(text: error.localizedDescription)], isError: true)
+                return .init(content: [.text(text: error.localizedDescription, annotations: nil, _meta: nil)], isError: true)
             }
         }
 
@@ -112,13 +112,13 @@ private func callTool(_ params: CallTool.Parameters, backend: CalendarBackend, c
     }
 }
 
-private func dateArgument(_ params: CallTool.Parameters, key: String) throws -> Date? {
+func dateArgument(_ params: CallTool.Parameters, key: String) throws -> Date? {
     guard let value = stringArgument(params, key: key), !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
     guard let date = ISO8601DateFormatter().date(from: value) else { throw ServerError.invalidDate(key) }
     return date
 }
 
-private func validateRange(_ from: Date, _ to: Date) throws {
+func validateRange(_ from: Date, _ to: Date) throws {
     guard from < to else { throw ServerError.invalidRange }
 }
 
