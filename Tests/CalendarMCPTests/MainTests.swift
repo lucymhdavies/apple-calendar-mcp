@@ -107,4 +107,20 @@ final class MainTests: XCTestCase {
             CalendarBackendError.accessDenied.errorDescription,
             CalendarBackendError.accessNotDetermined.errorDescription)
     }
+
+    func testEventOccurrenceIdentifierRoundTripsEventAndStart() throws {
+        let start = Date(timeIntervalSince1970: 1_789_560_000.25)
+        let identifier = EventOccurrenceIdentifier.make(eventIdentifier: "series-id", start: start)
+
+        let parsed = try XCTUnwrap(EventOccurrenceIdentifier.parse(identifier))
+
+        XCTAssertEqual(parsed.eventIdentifier, "series-id")
+        XCTAssertEqual(parsed.start, start)
+    }
+
+    func testEventOccurrenceIdentifierRejectsLegacyAndMalformedIDs() {
+        XCTAssertNil(EventOccurrenceIdentifier.parse("series-id"))
+        XCTAssertNil(EventOccurrenceIdentifier.parse("@occurrence:1789560000"))
+        XCTAssertNil(EventOccurrenceIdentifier.parse("series-id#occurrence:not-a-timestamp"))
+    }
 }

@@ -24,6 +24,26 @@ private enum AuthorizationResult {
     case timedOut
 }
 
+enum EventOccurrenceIdentifier {
+    private static let separator = "@occurrence:"
+
+    static func make(eventIdentifier: String, start: Date) -> String {
+        "\(eventIdentifier)\(separator)\(start.timeIntervalSince1970)"
+    }
+
+    static func parse(_ value: String) -> (eventIdentifier: String, start: Date)? {
+        guard let separatorRange = value.range(of: separator),
+              let timestamp = TimeInterval(value[separatorRange.upperBound...])
+        else {
+            return nil
+        }
+
+        let eventIdentifier = String(value[..<separatorRange.lowerBound])
+        guard !eventIdentifier.isEmpty else { return nil }
+        return (eventIdentifier, Date(timeIntervalSince1970: timestamp))
+    }
+}
+
 private final class AuthorizationCompletion: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<AuthorizationResult, Never>?
@@ -114,13 +134,31 @@ actor CalendarBackend: CalendarDataSource {
         guard from < to else { return [] }
         let calendar = try calendar(named: calendarName)
         let predicate = store.predicateForEvents(withStart: from, end: to, calendars: [calendar])
-        return store.events(matching: predicate).map(makeEvent)
+        return store.events(matching: predicate).map { event in
+            let eventIdentifier = event.eventIdentifier ?? event.calendarItemIdentifier
+            let occurrenceID = EventOccurrenceIdentifier.make(eventIdentifier: eventIdentifier, start: event.startDate)
+            return makeEvent(event, id: occurrenceID)
+        }
     }
 
     func getEvent(calendarName: String, id: String) throws -> CalendarEvent {
         let trimmedID = id.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedID.isEmpty else { throw CalendarBackendError.eventIDRequired }
-        _ = try calendar(named: calendarName)
+        let calendar = try calendar(named: calendarName)
+
+        if let occurrence = EventOccurrenceIdentifier.parse(trimmedID) {
+            let searchStart = occurrence.start.addingTimeInterval(-1)
+            let searchEnd = occurrence.start.addingTimeInterval(1)
+            let predicate = store.predicateForEvents(withStart: searchStart, end: searchEnd, calendars: [calendar])
+            guard let event = store.events(matching: predicate).first(where: {
+                ($0.eventIdentifier ?? $0.calendarItemIdentifier) == occurrence.eventIdentifier
+                    && $0.startDate == occurrence.start
+            }) else {
+                throw CalendarBackendError.eventNotFound(trimmedID)
+            }
+            return makeEvent(event, id: trimmedID)
+        }
+
         guard let event = store.event(withIdentifier: trimmedID), event.calendar.title == calendarName else {
             throw CalendarBackendError.eventNotFound(trimmedID)
         }
@@ -134,9 +172,9 @@ actor CalendarBackend: CalendarDataSource {
         return calendar
     }
 
-    private func makeEvent(_ event: EKEvent) -> CalendarEvent {
+    private func makeEvent(_ event: EKEvent, id: String? = nil) -> CalendarEvent {
         CalendarEvent(
-            id: event.eventIdentifier ?? event.calendarItemIdentifier,
+            id: id ?? event.eventIdentifier ?? event.calendarItemIdentifier,
             calendarID: event.calendar.calendarIdentifier,
             subject: event.title ?? "",
             body: event.notes ?? "",
