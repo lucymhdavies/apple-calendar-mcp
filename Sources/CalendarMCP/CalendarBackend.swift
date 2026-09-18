@@ -19,15 +19,20 @@ enum CalendarBackendError: LocalizedError {
     }
 }
 
+private enum AuthorizationResult {
+    case granted(Bool)
+    case timedOut
+}
+
 private final class AuthorizationCompletion: @unchecked Sendable {
     private let lock = NSLock()
-    private var continuation: CheckedContinuation<Bool, Never>?
+    private var continuation: CheckedContinuation<AuthorizationResult, Never>?
 
-    init(_ continuation: CheckedContinuation<Bool, Never>) {
+    init(_ continuation: CheckedContinuation<AuthorizationResult, Never>) {
         self.continuation = continuation
     }
 
-    func resume(_ granted: Bool) {
+    func resume(_ result: AuthorizationResult) {
         lock.lock()
         guard let continuation else {
             lock.unlock()
@@ -35,7 +40,7 @@ private final class AuthorizationCompletion: @unchecked Sendable {
         }
         self.continuation = nil
         lock.unlock()
-        continuation.resume(returning: granted)
+        continuation.resume(returning: result)
     }
 }
 
@@ -62,25 +67,31 @@ actor CalendarBackend: CalendarDataSource {
                 "calendar access not determined — calling requestFullAccessToEvents (macOS should show a permission prompt now)"
             )
             let start = Date()
-            let granted = await withCheckedContinuation { continuation in
+            let result = await withCheckedContinuation { continuation in
                 let completion = AuthorizationCompletion(continuation)
                 Task {
                     try? await Task.sleep(for: .seconds(30))
-                    completion.resume(false)
+                    completion.resume(.timedOut)
                 }
                 store.requestFullAccessToEvents { granted, error in
                     if let error {
                         Log.message("requestFullAccessToEvents returned an error: \(error.localizedDescription)")
                     }
-                    completion.resume(granted)
+                    completion.resume(.granted(granted))
                 }
             }
             let elapsed = Date().timeIntervalSince(start)
             Log.message(
-                "requestFullAccessToEvents resolved granted=\(granted) after \(String(format: "%.1f", elapsed))s"
+                "requestFullAccessToEvents resolved result=\(String(describing: result)) after \(String(format: "%.1f", elapsed))s"
             )
-            guard granted else { throw CalendarBackendError.accessNotDetermined }
-            Log.message("calendar access granted")
+            switch result {
+            case .granted(true):
+                Log.message("calendar access granted")
+            case .granted(false):
+                throw CalendarBackendError.accessDenied
+            case .timedOut:
+                throw CalendarBackendError.accessNotDetermined
+            }
         @unknown default:
             Log.message("calendar authorization status is unrecognized (@unknown default)")
             throw CalendarBackendError.accessDenied

@@ -106,11 +106,36 @@ actor RESTBackend: CalendarDataSource {
     }
 
     private func request(_ url: URL) async throws -> (Data, URLResponse) {
+        do {
+            return try await performRequest(url)
+        } catch {
+            guard cachedBaseURL == baseURL(for: url) else { throw error }
+            cachedBaseURL = nil
+            let refreshedBase = try await baseURL()
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+            components.scheme = refreshedBase.scheme
+            components.host = refreshedBase.host
+            components.port = refreshedBase.port
+            return try await performRequest(components.url!)
+        }
+    }
+
+    private func performRequest(_ url: URL) async throws -> (Data, URLResponse) {
         var request = URLRequest(url: url)
         if let token {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         return try await URLSession.shared.data(for: request)
+    }
+
+    private func baseURL(for url: URL) -> URL? {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+        components.path = ""
+        components.query = nil
+        components.fragment = nil
+        return components.url
     }
 }
 

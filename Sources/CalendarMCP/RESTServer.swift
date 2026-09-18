@@ -566,12 +566,13 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
     }
 
     @objc private func configureCalendar() {
+        let backend = service.backend
         // `service.listCalendars()` only awaits a plain (non-MainActor) actor, so a detached
         // task is safe here; the result is delivered back via RunLoop.perform (see
         // `checkCalendarAccess` for why not Task/GCD for the MainActor hop).
-        Task.detached { [weak self] in
+        Task.detached { [weak self, backend] in
+            let calendars = await backend.listCalendars()
             guard let self else { return }
-            let calendars = await self.service.listCalendars()
             RunLoop.main.perform {
                 MainActor.assumeIsolated {
                     self.presentCalendarPicker(calendars: calendars)
