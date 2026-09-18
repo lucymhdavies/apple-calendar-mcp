@@ -38,10 +38,16 @@ enum Log {
             return "unavailable (SecCodeCopySigningInformation failed)"
         }
         let identifier = signingInfo[kSecCodeInfoIdentifier as String] as? String ?? "unknown"
-        let team = signingInfo[kSecCodeInfoTeamIdentifier as String] as? String ?? "none (likely ad-hoc)"
+        let team = signingInfo[kSecCodeInfoTeamIdentifier as String] as? String ?? "none"
+        let authority = (signingInfo[kSecCodeInfoCertificates as String] as? [SecCertificate])?
+            .first.flatMap { cert -> String? in
+                var name: CFString?
+                guard SecCertificateCopyCommonName(cert, &name) == errSecSuccess else { return nil }
+                return name as String?
+            } ?? "unsigned/ad-hoc"
         let cdhash =
             (signingInfo[kSecCodeInfoUnique as String] as? Data)?
             .map { String(format: "%02x", $0) }.joined().prefix(16) ?? "unknown"
-        return "identifier=\(identifier) team=\(team) cdhash=\(cdhash)…"
+        return "identifier=\(identifier) authority=\(authority) team=\(team) cdhash=\(cdhash)…"
     }
 }
