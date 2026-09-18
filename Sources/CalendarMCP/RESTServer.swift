@@ -384,6 +384,7 @@ private let calendarNameDefaultsKey = "CALENDAR_NAME"
 @MainActor
 final class MenuBarController: NSObject, NSApplicationDelegate {
     private var service: CalendarService
+    private let backend: CalendarBackend
     private let configuration: RESTConfiguration
     private var server: RESTServer?
     private var statusItem: NSStatusItem!
@@ -395,8 +396,9 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
     private var lanEnabled = UserDefaults.standard.bool(forKey: lanEnabledDefaultsKey)
     private var configuredPort: UInt16
 
-    init(service: CalendarService, configuration: RESTConfiguration) {
+    init(service: CalendarService, backend: CalendarBackend, configuration: RESTConfiguration) {
         self.service = service
+        self.backend = backend
         self.configuration = configuration
         let savedPort = UserDefaults.standard.integer(forKey: portDefaultsKey)
         configuredPort = savedPort > 0 && savedPort <= Int(UInt16.max)
@@ -409,6 +411,14 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Request calendar access now that NSApplication is running and can show the dialog.
+        Task {
+            do {
+                try await backend.requestAccess()
+            } catch {
+                Log.message("calendar access denied: \(error.localizedDescription)")
+            }
+        }
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         updateStatusIcon(running: false)
         let menu = NSMenu()
@@ -463,7 +473,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
 
     @objc private func configureCalendar() {
         Task { @MainActor in
-            let calendars = await service.backend.listCalendars()
+            let calendars = await service.listCalendars()
             guard !calendars.isEmpty else {
                 showError("No calendars are available in Calendar.app.")
                 return
@@ -545,7 +555,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
             serverConfiguration = configuration.binding(host: "127.0.0.1", token: nil, port: configuredPort)
         }
         let server = RESTServer(
-            service: service, configuration: serverConfiguration, advertiseBonjour: lanEnabled)
+            service: service, configuration: serverConfiguration, advertiseBonjour: true)
         self.server = server
         updateMenu(running: false)
         server.onStateChange = { [weak self, weak server] running in

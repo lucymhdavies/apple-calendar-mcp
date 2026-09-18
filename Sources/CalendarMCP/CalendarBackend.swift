@@ -3,6 +3,7 @@ import Foundation
 
 enum CalendarBackendError: LocalizedError {
     case accessDenied
+    case accessNotDetermined
     case calendarNotFound(String)
     case eventNotFound(String)
     case eventIDRequired
@@ -10,6 +11,7 @@ enum CalendarBackendError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .accessDenied: return "Calendar access was denied"
+        case .accessNotDetermined: return "Calendar access has not been granted. Open System Settings → Privacy & Security → Calendars and enable access for CalendarMCP, then restart the MCP server."
         case .calendarNotFound(let name): return "calendar \(name.inspect) not found"
         case .eventNotFound(let id): return "event \(id.inspect) not found"
         case .eventIDRequired: return "event ID is required"
@@ -17,15 +19,26 @@ enum CalendarBackendError: LocalizedError {
     }
 }
 
-actor CalendarBackend {
+actor CalendarBackend: CalendarDataSource {
     private let store = EKEventStore()
 
     func requestAccess() async throws {
-        let granted = await withCheckedContinuation { continuation in
-            store.requestFullAccessToEvents { granted, _ in continuation.resume(returning: granted) }
+        let status = EKEventStore.authorizationStatus(for: .event)
+        switch status {
+        case .fullAccess, .writeOnly:
+            Log.message("calendar access already granted")
+            return
+        case .denied, .restricted:
+            throw CalendarBackendError.accessDenied
+        case .notDetermined:
+            let granted = await withCheckedContinuation { continuation in
+                store.requestFullAccessToEvents { granted, _ in continuation.resume(returning: granted) }
+            }
+            guard granted else { throw CalendarBackendError.accessNotDetermined }
+            Log.message("calendar access granted")
+        @unknown default:
+            throw CalendarBackendError.accessDenied
         }
-        guard granted else { throw CalendarBackendError.accessDenied }
-        Log.message("calendar access granted")
     }
 
     func listCalendars() -> [CalendarInfo] {

@@ -1,8 +1,15 @@
 import Foundation
 import MCP
 
+/// Shared interface for EventKit and REST-based calendar backends.
+protocol CalendarDataSource: Actor {
+    func listCalendars() async -> [CalendarInfo]
+    func listEvents(calendarName: String, from: Date, to: Date) async throws -> [CalendarEvent]
+    func getEvent(calendarName: String, id: String) async throws -> CalendarEvent
+}
+
 struct CalendarService {
-    let backend: CalendarBackend
+    let backend: any CalendarDataSource
     var calendarName: String
 
     func listCalendars() async -> [CalendarInfo] {
