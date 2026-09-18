@@ -46,6 +46,27 @@ struct RESTConfiguration {
     }
 }
 
+enum RESTPortStore {
+    private static let fileName = "rest-port"
+
+    static func write(_ port: UInt16) {
+        let directory = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/CalendarMCP", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? Data(String(port).utf8).write(to: directory.appendingPathComponent(fileName), options: .atomic)
+    }
+
+    static func read() -> UInt16? {
+        let path = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/CalendarMCP", isDirectory: true)
+            .appendingPathComponent(fileName)
+        guard let value = try? String(contentsOf: path, encoding: .utf8),
+            let port = UInt16(value.trimmingCharacters(in: .whitespacesAndNewlines)), port > 0
+        else { return nil }
+        return port
+    }
+}
+
 enum APIKeyStore {
     private static let service = "com.lucymhdavies.CalendarMCP"
     private static let account = "REST_API_KEY"
@@ -703,6 +724,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
         }
         do {
             try server.start()
+            RESTPortStore.write(configuredPort)
             updateMenu(running: true)
         } catch {
             self.server = nil
