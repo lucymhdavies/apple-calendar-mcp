@@ -149,9 +149,11 @@ actor RESTBackend: CalendarDataSource {
 
     private func configuredLocalBaseURL() -> URL? {
         let port = UserDefaults.standard.integer(forKey: portDefaultsKey)
-        let configuredPort = port > 0 && port <= Int(UInt16.max)
-            ? UInt16(port) : RESTPortStore.read() ?? 8765
-        return URL(string: "http://127.0.0.1:\(configuredPort)")
+        if port > 0 && port <= Int(UInt16.max) {
+            return URL(string: "http://127.0.0.1:\(UInt16(port))")
+        }
+        guard let sharedPort = RESTPortStore.read() else { return nil }
+        return URL(string: "http://127.0.0.1:\(sharedPort)")
     }
 }
 
