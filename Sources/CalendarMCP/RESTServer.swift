@@ -489,7 +489,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
         Log.message("menu bar: about to call EKEventStore.authorizationStatus(for:)")
         let status = EKEventStore.authorizationStatus(for: .event)
         Log.message("menu bar: startup calendar authorization status=\(status.diagnosticName)")
-        calendarAccessGranted = status == .fullAccess || status == .writeOnly
+        calendarAccessGranted = status == .fullAccess
         guard !calendarAccessGranted else {
             updateCalendarAccessMenuItem()
             updateStatusIcon(running: server?.isRunning == true)

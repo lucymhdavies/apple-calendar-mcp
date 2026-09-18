@@ -152,7 +152,9 @@ private final class BonjourDiscovery: NSObject, NetServiceBrowserDelegate, NetSe
         browser.schedule(in: .current, forMode: .default)
         browser.searchForServices(ofType: bonjourServiceType, inDomain: "local.")
         RunLoop.current.run(until: Date(timeIntervalSinceNow: timeout + 1))
-        // If we reach here the RunLoop exited without finish() being called (shouldn't happen).
+        if continuation != nil {
+            finish(.failure(RESTBackendError.serviceNotFound))
+        }
     }
 
     // MARK: NetServiceBrowserDelegate

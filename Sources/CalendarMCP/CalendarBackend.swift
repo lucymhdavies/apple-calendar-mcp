@@ -26,9 +26,12 @@ actor CalendarBackend: CalendarDataSource {
         let status = EKEventStore.authorizationStatus(for: .event)
         Log.message("calendar authorization status at request time: \(status.diagnosticName)")
         switch status {
-        case .fullAccess, .writeOnly:
+        case .fullAccess:
             Log.message("calendar access already granted")
             return
+        case .writeOnly:
+            Log.message("calendar access is write-only; full access is required for calendar reads")
+            throw CalendarBackendError.accessDenied
         case .denied, .restricted:
             Log.message(
                 "calendar access previously denied/restricted — the system will not re-prompt; grant access manually in System Settings > Privacy & Security > Calendars"
