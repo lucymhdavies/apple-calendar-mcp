@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented here.
 
+## [0.1.4] - 2026-09-18
+
+### Fixed
+
+- `/v1/calendars` (and the `list_calendars` MCP tool) could return an empty calendar list even after calendar access was granted in menu-bar/REST mode. The backend's `EKEventStore` was created before access was granted, and EventKit keeps serving an empty cache from a store created in that state; the menu bar's permission flow also requested access through a separate, throwaway store, so the backend's store was never refreshed. The backend now recreates its store immediately after access is granted.
+
+### Added
+
+- A "Serving: ..." menu bar item showing the calendar currently served by the API, with a warning state (and warning status icon) when calendar access is missing, no calendars are found, or the configured calendar no longer exists.
+
 ## [0.1.3] - 2026-09-18
 
 ### Fixed

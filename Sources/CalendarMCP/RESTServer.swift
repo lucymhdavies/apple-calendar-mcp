@@ -72,8 +72,14 @@ enum APIKeyStore {
     private static let account = "REST_API_KEY"
 
     static func getOrCreate() throws -> String {
-        if let existing = try read() {
-            return existing
+        do {
+            if let existing = try read() {
+                return existing
+            }
+        } catch {
+            Log.message(
+                "REST API key read failed; attempting key rotation: \(error.localizedDescription)")
+            _ = deleteIfExists()
         }
 
         var bytes = [UInt8](repeating: 0, count: 32)
@@ -91,8 +97,24 @@ enum APIKeyStore {
             kSecAttrAccount as String: account,
             kSecValueData as String: Data(key.utf8),
         ]
-        guard SecItemAdd(addQuery as CFDictionary, nil) == errSecSuccess else {
-            throw RESTServerError.invalidConfiguration("could not store REST API key")
+        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+        if addStatus == errSecDuplicateItem {
+            let matchQuery: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account,
+            ]
+            let update: [String: Any] = [
+                kSecValueData as String: Data(key.utf8)
+            ]
+            let updateStatus = SecItemUpdate(matchQuery as CFDictionary, update as CFDictionary)
+            guard updateStatus == errSecSuccess else {
+                throw RESTServerError.invalidConfiguration(
+                    "could not store REST API key (\(statusDescription(updateStatus)))")
+            }
+        } else if addStatus != errSecSuccess {
+            throw RESTServerError.invalidConfiguration(
+                "could not store REST API key (\(statusDescription(addStatus)))")
         }
         return key
     }
@@ -109,9 +131,33 @@ enum APIKeyStore {
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         guard status != errSecItemNotFound else { return nil }
         guard status == errSecSuccess, let data = result as? Data else {
-            throw RESTServerError.invalidConfiguration("could not read REST API key")
+            throw RESTServerError.invalidConfiguration(
+                "could not read REST API key (\(statusDescription(status)))")
         }
-        return String(data: data, encoding: .utf8)
+        guard let key = String(data: data, encoding: .utf8), !key.isEmpty else {
+            throw RESTServerError.invalidConfiguration("REST API key was unreadable")
+        }
+        return key
+    }
+
+    @discardableResult
+    private static func deleteIfExists() -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        if status != errSecSuccess && status != errSecItemNotFound {
+            Log.message("REST API key reset failed: \(statusDescription(status))")
+            return false
+        }
+        return status == errSecSuccess
+    }
+
+    private static func statusDescription(_ status: OSStatus) -> String {
+        let message = SecCopyErrorMessageString(status, nil) as String? ?? "unknown"
+        return "\(status) \(message)"
     }
 }
 
@@ -437,6 +483,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var statusMenuItem: NSMenuItem!
     private var calendarAccessMenuItem: NSMenuItem!
+    private var calendarStatusMenuItem: NSMenuItem!
     private var lanMenuItem: NSMenuItem!
     private var portMenuItem: NSMenuItem!
     private var calendarMenuItem: NSMenuItem!
@@ -444,6 +491,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
     private var lanEnabled = UserDefaults.standard.bool(forKey: lanEnabledDefaultsKey)
     private var configuredPort: UInt16
     private var calendarAccessGranted = false
+    private var noCalendarsFound = false
 
     init(service: CalendarService, backend: CalendarBackend, configuration: RESTConfiguration) {
         self.service = service
@@ -475,6 +523,9 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
             title: "Calendar Access: checking...", action: #selector(requestCalendarAccess), keyEquivalent: "")
         calendarAccessMenuItem.target = self
         menu.addItem(calendarAccessMenuItem)
+        calendarStatusMenuItem = NSMenuItem(title: "Serving: checking...", action: nil, keyEquivalent: "")
+        calendarStatusMenuItem.target = self
+        menu.addItem(calendarStatusMenuItem)
         menu.addItem(.separator())
         lanMenuItem = NSMenuItem(
             title: "Expose API to LAN", action: #selector(toggleLAN), keyEquivalent: "")
@@ -499,6 +550,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
         startServer()
         checkCalendarAccess()
+        refreshCalendarStatus()
     }
 
     @objc private func requestCalendarAccess() {
@@ -507,9 +559,29 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
         calendarAccessMenuItem.title = "Calendar Access: requesting..."
         calendarAccessMenuItem.action = nil
         requestFullAccess { [weak self] granted in
-            self?.calendarAccessGranted = granted
-            self?.updateCalendarAccessMenuItem()
-            self?.updateStatusIcon(running: self?.server?.isRunning == true)
+            self?.handleCalendarAccessResult(granted)
+        }
+    }
+
+    private func handleCalendarAccessResult(_ granted: Bool) {
+        calendarAccessGranted = granted
+        updateCalendarAccessMenuItem()
+        updateStatusIcon(running: server?.isRunning == true)
+        guard granted else {
+            refreshCalendarStatus()
+            return
+        }
+        // The backend's store may predate this grant and would otherwise keep reporting no
+        // calendars; see `CalendarBackend.resetStore`. Hop back via RunLoop (see
+        // `checkCalendarAccess` for why not Task/GCD for the MainActor hop).
+        Task.detached { [weak self, backend] in
+            await backend.resetStore()
+            guard let self else { return }
+            RunLoop.main.perform {
+                MainActor.assumeIsolated {
+                    self.refreshCalendarStatus()
+                }
+            }
         }
     }
 
@@ -549,9 +621,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
         activateForPermissionPrompt()
         calendarAccessMenuItem.title = "Calendar Access: requesting..."
         requestFullAccess { [weak self] granted in
-            self?.calendarAccessGranted = granted
-            self?.updateCalendarAccessMenuItem()
-            self?.updateStatusIcon(running: self?.server?.isRunning == true)
+            self?.handleCalendarAccessResult(granted)
         }
     }
 
@@ -589,6 +659,50 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
             calendarAccessMenuItem.title = "⚠ Calendar Access Denied — Click to Request"
             calendarAccessMenuItem.action = #selector(requestCalendarAccess)
         }
+    }
+
+    /// Refreshes the "Serving: ..." menu item so calendar problems (no access, no calendars,
+    /// or a configured calendar that no longer exists) are visible instead of failing silently.
+    private func refreshCalendarStatus() {
+        guard calendarAccessGranted else {
+            noCalendarsFound = false
+            calendarStatusMenuItem.title = "Serving: — (no calendar access)"
+            calendarStatusMenuItem.action = nil
+            updateStatusIcon(running: server?.isRunning == true)
+            return
+        }
+        let configuredName = service.calendarName
+        Task.detached { [weak self, backend, configuredName] in
+            let calendars = await backend.listCalendars()
+            guard let self else { return }
+            RunLoop.main.perform {
+                MainActor.assumeIsolated {
+                    self.applyCalendarStatus(calendars: calendars, configuredName: configuredName)
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func applyCalendarStatus(calendars: [CalendarInfo], configuredName: String) {
+        if calendars.isEmpty {
+            noCalendarsFound = true
+            calendarStatusMenuItem.title = "⚠ No Calendars Found — Click to Retry"
+            calendarStatusMenuItem.action = #selector(refreshCalendarStatusFromMenu)
+        } else if calendars.contains(where: { $0.name == configuredName }) {
+            noCalendarsFound = false
+            calendarStatusMenuItem.title = "✓ Serving: \(configuredName)"
+            calendarStatusMenuItem.action = nil
+        } else {
+            noCalendarsFound = true
+            calendarStatusMenuItem.title = "⚠ Serving: \"\(configuredName)\" not found — Click to Choose"
+            calendarStatusMenuItem.action = #selector(configureCalendar)
+        }
+        updateStatusIcon(running: server?.isRunning == true)
+    }
+
+    @objc private func refreshCalendarStatusFromMenu() {
+        refreshCalendarStatus()
     }
 
     @objc private func configurePort() {
@@ -655,6 +769,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
         service.calendarName = selectedName
         UserDefaults.standard.set(selectedName, forKey: calendarNameDefaultsKey)
         restartServer()
+        refreshCalendarStatus()
     }
 
     @objc private func toggleServer() {
@@ -796,6 +911,9 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
         if !calendarAccessGranted {
             symbolName = "calendar.badge.exclamationmark"
             description = "Calendar API: no calendar access"
+        } else if noCalendarsFound {
+            symbolName = "calendar.badge.exclamationmark"
+            description = "Calendar API: no calendars available"
         } else if lanEnabled {
             symbolName = running ? "network" : "network.slash"
             description = running ? "Calendar API exposed to LAN" : "Calendar LAN API stopped"

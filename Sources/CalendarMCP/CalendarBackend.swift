@@ -45,7 +45,7 @@ private final class AuthorizationCompletion: @unchecked Sendable {
 }
 
 actor CalendarBackend: CalendarDataSource {
-    private let store = EKEventStore()
+    private var store = EKEventStore()
 
     func requestAccess() async throws {
         let status = EKEventStore.authorizationStatus(for: .event)
@@ -96,6 +96,12 @@ actor CalendarBackend: CalendarDataSource {
             Log.message("calendar authorization status is unrecognized (@unknown default)")
             throw CalendarBackendError.accessDenied
         }
+    }
+
+    /// A store created before access was granted keeps returning an empty calendar list even
+    /// after permission changes, so callers must recreate it once access is confirmed.
+    func resetStore() {
+        store = EKEventStore()
     }
 
     func listCalendars() -> [CalendarInfo] {

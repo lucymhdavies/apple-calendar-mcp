@@ -47,7 +47,7 @@ struct CalendarMCP {
         }
 
         let server = Server(
-            name: "calendar-api", version: "0.1.3", capabilities: .init(tools: .init()))
+            name: "calendar-api", version: "0.1.4", capabilities: .init(tools: .init()))
         await server.withMethodHandler(ListTools.self) { _ in
             .init(tools: toolDefinitions)
         }
