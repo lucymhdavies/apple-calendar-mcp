@@ -8,6 +8,7 @@ import Network
 private let bonjourServiceName = "CalendarAPI"
 private let bonjourServiceType = "_http._tcp"
 private let discoveryTimeout: TimeInterval = 5
+private let portDefaultsKey = "REST_PORT"
 
 /// Calls the local REST server as a fallback when EventKit access is unavailable.
 /// Discovers the server port via mDNS (Bonjour) so it works regardless of port config.
@@ -29,6 +30,10 @@ actor RESTBackend: CalendarDataSource {
     /// Resolves the Bonjour service once and caches the result for subsequent calls.
     private func baseURL() async throws -> URL {
         if let cached = cachedBaseURL { return cached }
+        if let local = configuredLocalBaseURL() {
+            cachedBaseURL = local
+            return local
+        }
         let port = try await discoverBonjourPort(
             name: bonjourServiceName, timeout: discoveryTimeout)
         let url = URL(string: "http://127.0.0.1:\(port)")!
@@ -111,6 +116,10 @@ actor RESTBackend: CalendarDataSource {
         } catch {
             guard cachedBaseURL == baseURL(for: url) else { throw error }
             cachedBaseURL = nil
+            if let local = configuredLocalBaseURL(), local != url {
+                cachedBaseURL = local
+                return try await performRequest(local)
+            }
             let refreshedBase = try await baseURL()
             var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
             components.scheme = refreshedBase.scheme
@@ -136,6 +145,12 @@ actor RESTBackend: CalendarDataSource {
         components.query = nil
         components.fragment = nil
         return components.url
+    }
+
+    private func configuredLocalBaseURL() -> URL? {
+        let port = UserDefaults.standard.integer(forKey: portDefaultsKey)
+        let configuredPort = port > 0 && port <= Int(UInt16.max) ? port : 8765
+        return URL(string: "http://127.0.0.1:\(configuredPort)")
     }
 }
 

@@ -382,6 +382,31 @@ private let lanEnabledDefaultsKey = "REST_LAN_ENABLED"
 private let portDefaultsKey = "REST_PORT"
 private let calendarNameDefaultsKey = "CALENDAR_NAME"
 
+private final class PermissionRequestGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var finished = false
+    private let completion: @MainActor @Sendable (Bool) -> Void
+
+    init(completion: @escaping @MainActor @Sendable (Bool) -> Void) {
+        self.completion = completion
+    }
+
+    func finish(_ granted: Bool) {
+        lock.lock()
+        guard !finished else {
+            lock.unlock()
+            return
+        }
+        finished = true
+        lock.unlock()
+        RunLoop.main.perform {
+            MainActor.assumeIsolated {
+                self.completion(granted)
+            }
+        }
+    }
+}
+
 @MainActor
 final class MenuBarController: NSObject, NSApplicationDelegate {
     private var service: CalendarService
@@ -511,7 +536,12 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
 
     /// Requests EventKit access on a background queue and delivers the result on the main
     /// thread via `RunLoop.main.perform` (see `checkCalendarAccess` for why not GCD/Task).
-    private func requestFullAccess(completion: @escaping @MainActor (Bool) -> Void) {
+    private func requestFullAccess(completion: @escaping @MainActor @Sendable (Bool) -> Void) {
+        let gate = PermissionRequestGate(completion: completion)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 30) {
+            Log.message("menu bar: calendar access request timed out")
+            gate.finish(false)
+        }
         DispatchQueue.global(qos: .userInitiated).async {
             Log.message("menu bar: calling requestFullAccessToEvents on background queue")
             let store = EKEventStore()
@@ -524,12 +554,8 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
                 Log.message(
                     "menu bar: requestFullAccessToEvents resolved granted=\(granted) after \(String(format: "%.1f", elapsed))s, hopping to main thread"
                 )
-                RunLoop.main.perform {
-                    Log.message("menu bar: RunLoop.main.perform delivering result to UI")
-                    MainActor.assumeIsolated {
-                        completion(granted)
-                    }
-                }
+                Log.message("menu bar: delivering calendar access result to UI")
+                gate.finish(granted)
             }
         }
     }
@@ -663,7 +689,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
             serverConfiguration = configuration.binding(host: "127.0.0.1", token: nil, port: configuredPort)
         }
         let server = RESTServer(
-            service: service, configuration: serverConfiguration, advertiseBonjour: true)
+            service: service, configuration: serverConfiguration, advertiseBonjour: lanEnabled)
         self.server = server
         updateMenu(running: false)
         server.onStateChange = { [weak self, weak server] running in
