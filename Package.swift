@@ -14,7 +14,7 @@ let package = Package(
                 .product(name: "MCP", package: "swift-sdk")
             ],
             path: "Sources/CalendarMCP",
-            exclude: ["Info.plist"],
+            exclude: ["Info.plist", "CalendarMCP.entitlements"],
             linkerSettings: [
                 .unsafeFlags([
                     "-Xlinker", "-sectcreate",

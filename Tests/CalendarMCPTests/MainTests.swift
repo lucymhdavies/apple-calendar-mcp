@@ -98,4 +98,13 @@ final class MainTests: XCTestCase {
         XCTAssertEqual(configuration.host, "0.0.0.0")
         XCTAssertEqual(configuration.token, "0123456789abcdef")
     }
+
+    func testCalendarAccessDeniedErrorIsDistinctFromUndeterminedAccess() {
+        XCTAssertEqual(
+            CalendarBackendError.accessDenied.errorDescription,
+            "Calendar access was denied")
+        XCTAssertNotEqual(
+            CalendarBackendError.accessDenied.errorDescription,
+            CalendarBackendError.accessNotDetermined.errorDescription)
+    }
 }

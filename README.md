@@ -125,6 +125,41 @@ disabled by default and binds to loopback unless explicitly configured.
 
 Use `list_events` through the MCP panel for the same direct calendar check.
 
+## Code signing and Calendar access
+
+`./scripts/build-release.sh` ad-hoc signs the app by default (`CODESIGN_IDENTITY`
+unset). Ad-hoc signing gets a new identity on every build, so macOS treats each
+rebuild as a different app and any previously granted Calendar access is
+orphaned — the app has to be re-approved after every rebuild, and other launch
+modes (e.g. a stdio MCP client like Bob invoking the binary directly, without a
+window server connection to show the permission prompt) can never get their own
+grant and depend on the REST fallback instead.
+
+To get a stable identity so Calendar access survives rebuilds and direct
+(non-REST) EventKit access works for stdio clients too:
+
+1. Open **Keychain Access** (Spotlight → "Keychain Access").
+2. Menu bar → **Keychain Access → Certificate Assistant → Create a Certificate...**
+3. **Name:** `CalendarMCP Local Signing` (or any name you'll remember).
+4. **Identity Type:** Self-Signed Root
+5. **Certificate Type:** Code Signing
+6. Click **Create**, then continue/done through the rest.
+7. In Keychain Access, find the new certificate (under "My Certificates" in the
+   `login` keychain), double-click it, expand **Trust**, and set **"When using
+   this certificate"** to **Always Trust**.
+8. Build with the identity set:
+
+   ```bash
+   CODESIGN_IDENTITY="CalendarMCP Local Signing" ./scripts/build-release.sh
+   ```
+
+9. Launch the app once in a way that can show the system permission prompt
+   (e.g. via the menu bar/REST mode or the LaunchAgent) and approve Calendar
+   access. As long as you keep signing with the same identity, that grant
+   persists across future rebuilds, and any stdio invocation of the same
+   binary (Bob, VS Code, etc.) will see access already granted with no REST
+   fallback needed.
+
 ## Development
 
 ```bash

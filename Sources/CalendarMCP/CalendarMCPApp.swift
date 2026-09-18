@@ -15,24 +15,39 @@ struct CalendarMCP {
     }
 
     private static func run() async throws {
-        let backend = CalendarBackend()
-        do {
-            try await backend.requestAccess()
-        } catch {
-            Log.message("calendar access denied: \(error.localizedDescription)")
-            Darwin.exit(EXIT_FAILURE)
-        }
-
+        Log.startupDiagnostics()
         let calendarName = ProcessInfo.processInfo.environment["CALENDAR_NAME"] ?? "Calendar"
-        let service = CalendarService(backend: backend, calendarName: calendarName)
+
         if RESTConfiguration.isEnabled {
+            // In REST/menu-bar mode, request access after NSApplication launches
+            // so macOS can show the permission dialog (requires a window server connection).
             let configuration = try RESTConfiguration.fromEnvironment()
-            await runMenuBar(service: service, configuration: configuration)
+            let backend = CalendarBackend()
+            let service = CalendarService(backend: backend, calendarName: calendarName)
+            await runMenuBar(service: service, backend: backend, configuration: configuration)
             return
         }
 
+        let service: CalendarService
+        let eventKitBackend = CalendarBackend()
+        do {
+            try await eventKitBackend.requestAccess()
+            service = CalendarService(backend: eventKitBackend, calendarName: calendarName)
+        } catch {
+            Log.message("calendar access denied: \(error.localizedDescription)")
+            Log.message("attempting REST fallback via Bonjour...")
+            let restBackend = RESTBackend()
+            do {
+                try await restBackend.checkReachable()
+            } catch {
+                Log.message("REST fallback unavailable: \(error.localizedDescription)")
+                Darwin.exit(EXIT_FAILURE)
+            }
+            service = CalendarService(backend: restBackend, calendarName: calendarName)
+        }
+
         let server = Server(
-            name: "calendar-api", version: "0.1.2", capabilities: .init(tools: .init()))
+            name: "calendar-api", version: "0.1.3", capabilities: .init(tools: .init()))
         await server.withMethodHandler(ListTools.self) { _ in
             .init(tools: toolDefinitions)
         }
@@ -55,10 +70,13 @@ struct CalendarMCP {
     }
 
     @MainActor
-    private static func runMenuBar(service: CalendarService, configuration: RESTConfiguration) {
+    private static func runMenuBar(
+        service: CalendarService, backend: CalendarBackend, configuration: RESTConfiguration
+    ) {
         let application = NSApplication.shared
         application.setActivationPolicy(.accessory)
-        let delegate = MenuBarController(service: service, configuration: configuration)
+        let delegate = MenuBarController(
+            service: service, backend: backend, configuration: configuration)
         application.delegate = delegate
         application.run()
     }

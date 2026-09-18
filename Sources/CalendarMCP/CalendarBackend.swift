@@ -3,6 +3,7 @@ import Foundation
 
 enum CalendarBackendError: LocalizedError {
     case accessDenied
+    case accessNotDetermined
     case calendarNotFound(String)
     case eventNotFound(String)
     case eventIDRequired
@@ -10,6 +11,7 @@ enum CalendarBackendError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .accessDenied: return "Calendar access was denied"
+        case .accessNotDetermined: return "Calendar access has not been granted. Open System Settings → Privacy & Security → Calendars and enable access for CalendarMCP, then restart the MCP server."
         case .calendarNotFound(let name): return "calendar \(name.inspect) not found"
         case .eventNotFound(let id): return "event \(id.inspect) not found"
         case .eventIDRequired: return "event ID is required"
@@ -17,15 +19,83 @@ enum CalendarBackendError: LocalizedError {
     }
 }
 
-actor CalendarBackend {
+private enum AuthorizationResult {
+    case granted(Bool)
+    case timedOut
+}
+
+private final class AuthorizationCompletion: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<AuthorizationResult, Never>?
+
+    init(_ continuation: CheckedContinuation<AuthorizationResult, Never>) {
+        self.continuation = continuation
+    }
+
+    func resume(_ result: AuthorizationResult) {
+        lock.lock()
+        guard let continuation else {
+            lock.unlock()
+            return
+        }
+        self.continuation = nil
+        lock.unlock()
+        continuation.resume(returning: result)
+    }
+}
+
+actor CalendarBackend: CalendarDataSource {
     private let store = EKEventStore()
 
     func requestAccess() async throws {
-        let granted = await withCheckedContinuation { continuation in
-            store.requestFullAccessToEvents { granted, _ in continuation.resume(returning: granted) }
+        let status = EKEventStore.authorizationStatus(for: .event)
+        Log.message("calendar authorization status at request time: \(status.diagnosticName)")
+        switch status {
+        case .fullAccess:
+            Log.message("calendar access already granted")
+            return
+        case .writeOnly:
+            Log.message("calendar access is write-only; full access is required for calendar reads")
+            throw CalendarBackendError.accessDenied
+        case .denied, .restricted:
+            Log.message(
+                "calendar access previously denied/restricted — the system will not re-prompt; grant access manually in System Settings > Privacy & Security > Calendars"
+            )
+            throw CalendarBackendError.accessDenied
+        case .notDetermined:
+            Log.message(
+                "calendar access not determined — calling requestFullAccessToEvents (macOS should show a permission prompt now)"
+            )
+            let start = Date()
+            let result = await withCheckedContinuation { continuation in
+                let completion = AuthorizationCompletion(continuation)
+                Task {
+                    try? await Task.sleep(for: .seconds(30))
+                    completion.resume(.timedOut)
+                }
+                store.requestFullAccessToEvents { granted, error in
+                    if let error {
+                        Log.message("requestFullAccessToEvents returned an error: \(error.localizedDescription)")
+                    }
+                    completion.resume(.granted(granted))
+                }
+            }
+            let elapsed = Date().timeIntervalSince(start)
+            Log.message(
+                "requestFullAccessToEvents resolved result=\(String(describing: result)) after \(String(format: "%.1f", elapsed))s"
+            )
+            switch result {
+            case .granted(true):
+                Log.message("calendar access granted")
+            case .granted(false):
+                throw CalendarBackendError.accessDenied
+            case .timedOut:
+                throw CalendarBackendError.accessNotDetermined
+            }
+        @unknown default:
+            Log.message("calendar authorization status is unrecognized (@unknown default)")
+            throw CalendarBackendError.accessDenied
         }
-        guard granted else { throw CalendarBackendError.accessDenied }
-        Log.message("calendar access granted")
     }
 
     func listCalendars() -> [CalendarInfo] {
@@ -99,4 +169,17 @@ actor CalendarBackend {
 
 private extension String {
     var inspect: String { "\"\(self.replacingOccurrences(of: "\"", with: "\\\""))\"" }
+}
+
+extension EKAuthorizationStatus {
+    var diagnosticName: String {
+        switch self {
+        case .notDetermined: return "notDetermined"
+        case .restricted: return "restricted"
+        case .denied: return "denied"
+        case .fullAccess: return "fullAccess"
+        case .writeOnly: return "writeOnly"
+        @unknown default: return "unknown(\(rawValue))"
+        }
+    }
 }
