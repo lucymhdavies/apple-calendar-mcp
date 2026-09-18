@@ -1,5 +1,6 @@
 import AppKit
 import Darwin
+import EventKit
 import Foundation
 import Network
 import Security
@@ -389,12 +390,14 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
     private var server: RESTServer?
     private var statusItem: NSStatusItem!
     private var statusMenuItem: NSMenuItem!
+    private var calendarAccessMenuItem: NSMenuItem!
     private var lanMenuItem: NSMenuItem!
     private var portMenuItem: NSMenuItem!
     private var calendarMenuItem: NSMenuItem!
     private var copyURLMenuItem: NSMenuItem!
     private var lanEnabled = UserDefaults.standard.bool(forKey: lanEnabledDefaultsKey)
     private var configuredPort: UInt16
+    private var calendarAccessGranted = false
 
     init(service: CalendarService, backend: CalendarBackend, configuration: RESTConfiguration) {
         self.service = service
@@ -411,14 +414,9 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Request calendar access now that NSApplication is running and can show the dialog.
-        Task {
-            do {
-                try await backend.requestAccess()
-            } catch {
-                Log.message("calendar access denied: \(error.localizedDescription)")
-            }
-        }
+        Log.message(
+            "menu bar: applicationDidFinishLaunching, activationPolicy=\(NSApplication.shared.activationPolicy().rawValue)"
+        )
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         updateStatusIcon(running: false)
         let menu = NSMenu()
@@ -426,6 +424,12 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
             title: "Start API", action: #selector(toggleServer), keyEquivalent: "")
         statusMenuItem.target = self
         menu.addItem(statusMenuItem)
+        menu.addItem(.separator())
+        calendarAccessMenuItem = NSMenuItem(
+            title: "Calendar Access: checking...", action: #selector(requestCalendarAccess), keyEquivalent: "")
+        calendarAccessMenuItem.target = self
+        menu.addItem(calendarAccessMenuItem)
+        menu.addItem(.separator())
         lanMenuItem = NSMenuItem(
             title: "Expose API to LAN", action: #selector(toggleLAN), keyEquivalent: "")
         lanMenuItem.target = self
@@ -448,6 +452,96 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
         menu.addItem(quitItem)
         statusItem.menu = menu
         startServer()
+        checkCalendarAccess()
+    }
+
+    @objc private func requestCalendarAccess() {
+        Log.message("menu bar: user requested calendar access manually")
+        activateForPermissionPrompt()
+        calendarAccessMenuItem.title = "Calendar Access: requesting..."
+        calendarAccessMenuItem.action = nil
+        requestFullAccess { [weak self] granted in
+            self?.calendarAccessGranted = granted
+            self?.updateCalendarAccessMenuItem()
+            self?.updateStatusIcon(running: self?.server?.isRunning == true)
+        }
+    }
+
+    /// Brings the app to the foreground before requesting EventKit access. TCC permission
+    /// prompts can fail to appear (leaving the request hanging) for accessory/LSUIElement
+    /// apps that were launched in the background, e.g. via a LaunchAgent at login.
+    private func activateForPermissionPrompt() {
+        let policy = NSApplication.shared.activationPolicy()
+        Log.message("menu bar: activating app for permission prompt (current activation policy=\(policy.rawValue))")
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Checks calendar authorization and requests access if undetermined.
+    ///
+    /// This deliberately avoids `Task {}`/`DispatchQueue.main.async` to marshal work back to the
+    /// main thread: on this build/OS combination the app's main dispatch queue is never
+    /// serviced while `NSApplication.run()` is spinning its run loop — a `Task {}` created here,
+    /// or a plain `DispatchQueue.main.async` block, silently never executes (confirmed via
+    /// instrumentation: neither ever logged). `RunLoop.main.perform` schedules through the
+    /// CFRunLoop directly instead of libdispatch's main queue, and that path IS serviced, so
+    /// it's used here as the reliable way back onto the main thread.
+    private func checkCalendarAccess() {
+        Log.message("menu bar: about to call EKEventStore.authorizationStatus(for:)")
+        let status = EKEventStore.authorizationStatus(for: .event)
+        Log.message("menu bar: startup calendar authorization status=\(status.diagnosticName)")
+        calendarAccessGranted = status == .fullAccess || status == .writeOnly
+        guard !calendarAccessGranted else {
+            updateCalendarAccessMenuItem()
+            updateStatusIcon(running: server?.isRunning == true)
+            return
+        }
+        guard status == .notDetermined else {
+            updateCalendarAccessMenuItem()
+            updateStatusIcon(running: server?.isRunning == true)
+            return
+        }
+        activateForPermissionPrompt()
+        calendarAccessMenuItem.title = "Calendar Access: requesting..."
+        requestFullAccess { [weak self] granted in
+            self?.calendarAccessGranted = granted
+            self?.updateCalendarAccessMenuItem()
+            self?.updateStatusIcon(running: self?.server?.isRunning == true)
+        }
+    }
+
+    /// Requests EventKit access on a background queue and delivers the result on the main
+    /// thread via `RunLoop.main.perform` (see `checkCalendarAccess` for why not GCD/Task).
+    private func requestFullAccess(completion: @escaping @MainActor (Bool) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            Log.message("menu bar: calling requestFullAccessToEvents on background queue")
+            let store = EKEventStore()
+            let start = Date()
+            store.requestFullAccessToEvents { granted, error in
+                if let error {
+                    Log.message("menu bar: requestFullAccessToEvents error: \(error.localizedDescription)")
+                }
+                let elapsed = Date().timeIntervalSince(start)
+                Log.message(
+                    "menu bar: requestFullAccessToEvents resolved granted=\(granted) after \(String(format: "%.1f", elapsed))s, hopping to main thread"
+                )
+                RunLoop.main.perform {
+                    Log.message("menu bar: RunLoop.main.perform delivering result to UI")
+                    MainActor.assumeIsolated {
+                        completion(granted)
+                    }
+                }
+            }
+        }
+    }
+
+    private func updateCalendarAccessMenuItem() {
+        if calendarAccessGranted {
+            calendarAccessMenuItem.title = "✓ Calendar Access Granted"
+            calendarAccessMenuItem.action = nil
+        } else {
+            calendarAccessMenuItem.title = "⚠ Calendar Access Denied — Click to Request"
+            calendarAccessMenuItem.action = #selector(requestCalendarAccess)
+        }
     }
 
     @objc private func configurePort() {
@@ -472,34 +566,47 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
     }
 
     @objc private func configureCalendar() {
-        Task { @MainActor in
-            let calendars = await service.listCalendars()
-            guard !calendars.isEmpty else {
-                showError("No calendars are available in Calendar.app.")
-                return
+        // `service.listCalendars()` only awaits a plain (non-MainActor) actor, so a detached
+        // task is safe here; the result is delivered back via RunLoop.perform (see
+        // `checkCalendarAccess` for why not Task/GCD for the MainActor hop).
+        Task.detached { [weak self] in
+            guard let self else { return }
+            let calendars = await self.service.listCalendars()
+            RunLoop.main.perform {
+                MainActor.assumeIsolated {
+                    self.presentCalendarPicker(calendars: calendars)
+                }
             }
-
-            let picker = NSPopUpButton(frame: .zero, pullsDown: false)
-            picker.addItems(withTitles: calendars.map(\.name))
-            if let index = calendars.firstIndex(where: { $0.name == service.calendarName }) {
-                picker.selectItem(at: index)
-            }
-            picker.sizeToFit()
-
-            let alert = NSAlert()
-            alert.messageText = "Choose calendar"
-            alert.informativeText = "Select the calendar used by the API. The API will restart."
-            alert.accessoryView = picker
-            alert.addButton(withTitle: "Apply")
-            alert.addButton(withTitle: "Cancel")
-            guard alert.runModal() == .alertFirstButtonReturn,
-                let selectedName = picker.selectedItem?.title
-            else { return }
-
-            service.calendarName = selectedName
-            UserDefaults.standard.set(selectedName, forKey: calendarNameDefaultsKey)
-            restartServer()
         }
+    }
+
+    @MainActor
+    private func presentCalendarPicker(calendars: [CalendarInfo]) {
+        guard !calendars.isEmpty else {
+            showError("No calendars are available in Calendar.app.")
+            return
+        }
+
+        let picker = NSPopUpButton(frame: .zero, pullsDown: false)
+        picker.addItems(withTitles: calendars.map(\.name))
+        if let index = calendars.firstIndex(where: { $0.name == service.calendarName }) {
+            picker.selectItem(at: index)
+        }
+        picker.sizeToFit()
+
+        let alert = NSAlert()
+        alert.messageText = "Choose calendar"
+        alert.informativeText = "Select the calendar used by the API. The API will restart."
+        alert.accessoryView = picker
+        alert.addButton(withTitle: "Apply")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn,
+            let selectedName = picker.selectedItem?.title
+        else { return }
+
+        service.calendarName = selectedName
+        UserDefaults.standard.set(selectedName, forKey: calendarNameDefaultsKey)
+        restartServer()
     }
 
     @objc private func toggleServer() {
@@ -559,9 +666,12 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
         self.server = server
         updateMenu(running: false)
         server.onStateChange = { [weak self, weak server] running in
-            Task { @MainActor in
-                guard let self, self.server === server else { return }
-                self.updateMenu(running: running)
+            // See `checkCalendarAccess` for why RunLoop.perform is used instead of Task/GCD here.
+            RunLoop.main.perform {
+                MainActor.assumeIsolated {
+                    guard let self, self.server === server else { return }
+                    self.updateMenu(running: running)
+                }
             }
         }
         do {
@@ -634,7 +744,10 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
     private func updateStatusIcon(running: Bool) {
         let symbolName: String
         let description: String
-        if lanEnabled {
+        if !calendarAccessGranted {
+            symbolName = "calendar.badge.exclamationmark"
+            description = "Calendar API: no calendar access"
+        } else if lanEnabled {
             symbolName = running ? "network" : "network.slash"
             description = running ? "Calendar API exposed to LAN" : "Calendar LAN API stopped"
         } else {

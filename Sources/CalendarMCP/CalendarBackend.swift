@@ -24,19 +24,49 @@ actor CalendarBackend: CalendarDataSource {
 
     func requestAccess() async throws {
         let status = EKEventStore.authorizationStatus(for: .event)
+        Log.message("calendar authorization status at request time: \(status.diagnosticName)")
         switch status {
         case .fullAccess, .writeOnly:
             Log.message("calendar access already granted")
             return
         case .denied, .restricted:
+            Log.message(
+                "calendar access previously denied/restricted — the system will not re-prompt; grant access manually in System Settings > Privacy & Security > Calendars"
+            )
             throw CalendarBackendError.accessDenied
         case .notDetermined:
-            let granted = await withCheckedContinuation { continuation in
-                store.requestFullAccessToEvents { granted, _ in continuation.resume(returning: granted) }
+            Log.message(
+                "calendar access not determined — calling requestFullAccessToEvents (macOS should show a permission prompt now)"
+            )
+            let watchdog = Task {
+                var waited = 0
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(10))
+                    guard !Task.isCancelled else { break }
+                    waited += 10
+                    Log.message(
+                        "still waiting on requestFullAccessToEvents after \(waited)s — if no prompt appeared, the process may not be foregrounded/active (common for LaunchAgent-launched or accessory apps); try launching the app directly and interacting with it, or grant access manually in System Settings > Privacy & Security > Calendars"
+                    )
+                }
             }
+            let start = Date()
+            let granted = await withCheckedContinuation { continuation in
+                store.requestFullAccessToEvents { granted, error in
+                    if let error {
+                        Log.message("requestFullAccessToEvents returned an error: \(error.localizedDescription)")
+                    }
+                    continuation.resume(returning: granted)
+                }
+            }
+            watchdog.cancel()
+            let elapsed = Date().timeIntervalSince(start)
+            Log.message(
+                "requestFullAccessToEvents resolved granted=\(granted) after \(String(format: "%.1f", elapsed))s"
+            )
             guard granted else { throw CalendarBackendError.accessNotDetermined }
             Log.message("calendar access granted")
         @unknown default:
+            Log.message("calendar authorization status is unrecognized (@unknown default)")
             throw CalendarBackendError.accessDenied
         }
     }
@@ -112,4 +142,17 @@ actor CalendarBackend: CalendarDataSource {
 
 private extension String {
     var inspect: String { "\"\(self.replacingOccurrences(of: "\"", with: "\\\""))\"" }
+}
+
+extension EKAuthorizationStatus {
+    var diagnosticName: String {
+        switch self {
+        case .notDetermined: return "notDetermined"
+        case .restricted: return "restricted"
+        case .denied: return "denied"
+        case .fullAccess: return "fullAccess"
+        case .writeOnly: return "writeOnly"
+        @unknown default: return "unknown(\(rawValue))"
+        }
+    }
 }
