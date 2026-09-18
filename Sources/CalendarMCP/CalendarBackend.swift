@@ -19,6 +19,26 @@ enum CalendarBackendError: LocalizedError {
     }
 }
 
+private final class AuthorizationCompletion: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Bool, Never>?
+
+    init(_ continuation: CheckedContinuation<Bool, Never>) {
+        self.continuation = continuation
+    }
+
+    func resume(_ granted: Bool) {
+        lock.lock()
+        guard let continuation else {
+            lock.unlock()
+            return
+        }
+        self.continuation = nil
+        lock.unlock()
+        continuation.resume(returning: granted)
+    }
+}
+
 actor CalendarBackend: CalendarDataSource {
     private let store = EKEventStore()
 
@@ -41,27 +61,20 @@ actor CalendarBackend: CalendarDataSource {
             Log.message(
                 "calendar access not determined — calling requestFullAccessToEvents (macOS should show a permission prompt now)"
             )
-            let watchdog = Task {
-                var waited = 0
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(10))
-                    guard !Task.isCancelled else { break }
-                    waited += 10
-                    Log.message(
-                        "still waiting on requestFullAccessToEvents after \(waited)s — if no prompt appeared, the process may not be foregrounded/active (common for LaunchAgent-launched or accessory apps); try launching the app directly and interacting with it, or grant access manually in System Settings > Privacy & Security > Calendars"
-                    )
-                }
-            }
             let start = Date()
             let granted = await withCheckedContinuation { continuation in
+                let completion = AuthorizationCompletion(continuation)
+                Task {
+                    try? await Task.sleep(for: .seconds(30))
+                    completion.resume(false)
+                }
                 store.requestFullAccessToEvents { granted, error in
                     if let error {
                         Log.message("requestFullAccessToEvents returned an error: \(error.localizedDescription)")
                     }
-                    continuation.resume(returning: granted)
+                    completion.resume(granted)
                 }
             }
-            watchdog.cancel()
             let elapsed = Date().timeIntervalSince(start)
             Log.message(
                 "requestFullAccessToEvents resolved granted=\(granted) after \(String(format: "%.1f", elapsed))s"

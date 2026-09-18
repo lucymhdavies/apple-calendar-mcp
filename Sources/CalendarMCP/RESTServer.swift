@@ -76,7 +76,7 @@ enum APIKeyStore {
         return key
     }
 
-    private static func read() throws -> String? {
+    static func read() throws -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

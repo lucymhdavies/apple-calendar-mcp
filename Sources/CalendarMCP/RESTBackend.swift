@@ -12,6 +12,7 @@ private let discoveryTimeout: TimeInterval = 5
 /// Calls the local REST server as a fallback when EventKit access is unavailable.
 /// Discovers the server port via mDNS (Bonjour) so it works regardless of port config.
 actor RESTBackend: CalendarDataSource {
+    private let token: String?
     private let decoder: JSONDecoder = {
         let d = JSONDecoder()
         d.dateDecodingStrategy = .iso8601
@@ -20,6 +21,10 @@ actor RESTBackend: CalendarDataSource {
 
     /// Cached after first successful discovery.
     private var cachedBaseURL: URL?
+
+    init() {
+        token = try? APIKeyStore.read()
+    }
 
     /// Resolves the Bonjour service once and caches the result for subsequent calls.
     private func baseURL() async throws -> URL {
@@ -35,7 +40,7 @@ actor RESTBackend: CalendarDataSource {
     func checkReachable() async throws {
         let base = try await baseURL()
         let url = base.appendingPathComponent("health")
-        let (_, response) = try await URLSession.shared.data(from: url)
+        let (_, response) = try await request(url)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             throw RESTBackendError.serverUnreachable
         }
@@ -93,11 +98,19 @@ actor RESTBackend: CalendarDataSource {
     // MARK: - Private
 
     private func get<T: Decodable>(_ url: URL) async throws -> T {
-        let (data, response) = try await URLSession.shared.data(from: url)
+        let (data, response) = try await request(url)
         if let http = response as? HTTPURLResponse, http.statusCode != 200 {
             throw RESTBackendError.httpError(http.statusCode)
         }
         return try decoder.decode(T.self, from: data)
+    }
+
+    private func request(_ url: URL) async throws -> (Data, URLResponse) {
+        var request = URLRequest(url: url)
+        if let token {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        return try await URLSession.shared.data(for: request)
     }
 }
 
