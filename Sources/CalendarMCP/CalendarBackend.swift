@@ -33,7 +33,8 @@ enum EventOccurrenceIdentifier {
 
     static func parse(_ value: String) -> (eventIdentifier: String, start: Date)? {
         guard let separatorRange = value.range(of: separator),
-              let timestamp = TimeInterval(value[separatorRange.upperBound...])
+              let timestamp = TimeInterval(value[separatorRange.upperBound...]),
+              timestamp.isFinite
         else {
             return nil
         }
@@ -136,8 +137,10 @@ actor CalendarBackend: CalendarDataSource {
         let predicate = store.predicateForEvents(withStart: from, end: to, calendars: [calendar])
         return store.events(matching: predicate).map { event in
             let eventIdentifier = event.eventIdentifier ?? event.calendarItemIdentifier
-            let occurrenceID = EventOccurrenceIdentifier.make(eventIdentifier: eventIdentifier, start: event.startDate)
-            return makeEvent(event, id: occurrenceID)
+            let id = event.hasRecurrenceRules
+                ? EventOccurrenceIdentifier.make(eventIdentifier: eventIdentifier, start: event.startDate)
+                : eventIdentifier
+            return makeEvent(event, id: id)
         }
     }
 

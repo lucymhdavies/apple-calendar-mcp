@@ -4,6 +4,18 @@ import XCTest
 @testable import CalendarMCP
 
 final class MainTests: XCTestCase {
+    func testRESTJSONEncoderIncludesNumericTimezoneOffset() throws {
+        struct Timestamp: Encodable {
+            let date: Date
+        }
+
+        let timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 3_600))
+        let data = try restJSONEncoder(timeZone: timeZone).encode(
+            Timestamp(date: Date(timeIntervalSince1970: 0)))
+
+        XCTAssertEqual(String(decoding: data, as: UTF8.self), "{\"date\":\"1970-01-01T01:00:00+01:00\"}")
+    }
+
     func testDateArgumentParsesRFC3339() throws {
         let params = CallTool.Parameters(
             name: "list_events",
@@ -122,5 +134,6 @@ final class MainTests: XCTestCase {
         XCTAssertNil(EventOccurrenceIdentifier.parse("series-id"))
         XCTAssertNil(EventOccurrenceIdentifier.parse("@occurrence:1789560000"))
         XCTAssertNil(EventOccurrenceIdentifier.parse("series-id#occurrence:not-a-timestamp"))
+        XCTAssertNil(EventOccurrenceIdentifier.parse("series-id@occurrence:nan"))
     }
 }
