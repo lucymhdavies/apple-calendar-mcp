@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented here.
 
+## [0.1.5] - 2026-09-22
+
+### Fixed
+
+- MCP and REST calendar timestamps now include the local numeric timezone offset (for example, `+01:00`) instead of always serializing in UTC, so clients can interpret local event times without guessing the offset.
+- Recurring event occurrences now use start-time-specific identifiers that resolve back to the listed occurrence. Ordinary events retain their direct Calendar.app identifiers, and malformed non-finite occurrence timestamps are rejected.
+
+### Added
+
+- Release builds now stamp the app bundle with the source Git revision and log it at startup, adding `-dirty` when the build includes local changes.
+
 ## [0.1.4] - 2026-09-18
 
 ### Fixed

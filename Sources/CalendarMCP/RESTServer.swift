@@ -186,6 +186,18 @@ enum RESTServerError: LocalizedError {
     }
 }
 
+func restJSONEncoder(timeZone: TimeZone = .current) -> JSONEncoder {
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .iso8601)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = timeZone
+    formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssxxx"
+
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .formatted(formatter)
+    return encoder
+}
+
 private let bonjourServiceName = "CalendarAPI"
 private let bonjourServiceType = "_http._tcp"
 
@@ -429,9 +441,7 @@ final class RESTServer: @unchecked Sendable {
     }
 
     private func encode<T: Encodable>(_ value: T) throws -> Data {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        return try encoder.encode(value)
+        try restJSONEncoder().encode(value)
     }
 
     private func jsonResponse<T: Encodable>(status: Int, value: T) -> HTTPResponse {

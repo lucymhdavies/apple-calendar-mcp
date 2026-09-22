@@ -47,7 +47,7 @@ struct CalendarMCP {
         }
 
         let server = Server(
-            name: "calendar-api", version: "0.1.4", capabilities: .init(tools: .init()))
+            name: "calendar-api", version: "0.1.5", capabilities: .init(tools: .init()))
         await server.withMethodHandler(ListTools.self) { _ in
             .init(tools: toolDefinitions)
         }
@@ -182,7 +182,5 @@ private func stringArrayArgument(_ params: CallTool.Parameters, key: String) -> 
 }
 
 private func encode<T: Encodable>(_ value: T) throws -> String {
-    let encoder = JSONEncoder()
-    encoder.dateEncodingStrategy = .iso8601
-    return String(decoding: try encoder.encode(value), as: UTF8.self)
+    String(decoding: try restJSONEncoder().encode(value), as: UTF8.self)
 }

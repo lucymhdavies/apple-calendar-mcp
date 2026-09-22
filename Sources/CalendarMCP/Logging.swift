@@ -18,6 +18,9 @@ enum Log {
         message(
             "bundle id=\(Bundle.main.bundleIdentifier ?? "unknown") path=\(Bundle.main.bundlePath) executable=\(Bundle.main.executablePath ?? "unknown")"
         )
+        message(
+            "build revision=\(Bundle.main.object(forInfoDictionaryKey: "CalendarMCPBuildRevision") as? String ?? "unknown")"
+        )
         message("code signing: \(signingSummary())")
     }
 
