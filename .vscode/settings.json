@@ -5,6 +5,8 @@
         "test": true,
         "otool": true,
         "strings": true,
-        "codesign": true
-    }
+        "codesign": true,
+        "./scripts/build-release.sh": true
+    },
+    "workbench.colorTheme": "Light Modern"
 }

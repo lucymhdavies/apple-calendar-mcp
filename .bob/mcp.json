@@ -12,7 +12,8 @@
         "get_freebusy",
         "list_calendars",
         "list_events"
-      ]
+      ],
+      "disabled": false
     }
   }
 }
