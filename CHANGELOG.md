@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented here.
 
+## [0.1.7] - 2026-09-23
+
+### Maintenance
+
+- Dummy release to verify the scripted release workflow; no product changes.
+
 ## [0.1.6] - 2026-09-23
 
 ### Added
