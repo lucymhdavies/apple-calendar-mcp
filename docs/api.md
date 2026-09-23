@@ -1,8 +1,7 @@
 # Calendar REST API
 
 This is the HTTP API exposed by the packaged `CalendarAPI` macOS application.
-It is read-only and serves events from the local macOS Calendar account selected
-by `CALENDAR_NAME` (default: `Calendar`).
+It is read-only and serves events from the local macOS Calendar accounts.
 
 ## Base URL and authentication
 
@@ -19,7 +18,7 @@ use the resolved host and port as the API base URL. Loopback-only mode is not
 advertised. Bonjour discovery does not bypass bearer-token authentication.
 
 Loopback mode does not require authentication. When the server is exposed to
-the LAN, every request except `GET /health` must include:
+the LAN, every request except `GET /health` and `GET /v1/calendars` must include:
 
 ```http
 Authorization: Bearer YOUR_API_KEY
@@ -48,6 +47,11 @@ enable CORS for an unrelated frontend origin.
 The service has no required TXT record. The resolved host and port are the
 connection details; the API key is separate authentication material.
 
+## Design Notes
+
+- **List operations return summaries:** Both MCP `list_events` tool and REST `GET /v1/events` return event summaries (minimal details: subject, time, organizer, location) to minimize token usage and network payload.
+- **Full details on demand:** Use MCP `get_event` tool or REST `GET /v1/events?id={id}` to retrieve complete event data including attendee list, description, and recurrence rules.
+
 ## Endpoints
 
 ### `GET /health`
@@ -57,8 +61,14 @@ Unauthenticated liveness check.
 Response:
 
 ```json
-{"status":"ok","service":"calendar"}
+{"status":"ok","service":"calendar","version":"aed3a68a2494+20260923T102930Z-dirty"}
 ```
+
+The `version` field contains:
+- Git commit hash (12 characters)
+- `+` separator
+- Build timestamp (UTC, ISO8601 format)
+- `-dirty` suffix if there were uncommitted changes at build time
 
 ### `GET /v1/calendars`
 
@@ -85,34 +95,33 @@ map them in this API.
 
 ### `GET /v1/events`
 
-Lists events overlapping a time range.
+Lists events overlapping a time range as summaries (minimal details for token efficiency).
 
 Query parameters:
 
 | Parameter | Required | Description |
 | --- | --- | --- |
+| `calendar` | No | Calendar name to query. If omitted, events from all calendars are returned. |
 | `from` | No | RFC3339/ISO 8601 start time; defaults to the current time. |
 | `to` | No | RFC3339/ISO 8601 end time; defaults to 24 hours after `from`. |
 | `limit` | No | Positive integer maximum number of returned events. If omitted, zero, or negative, no limit is applied. |
 
-Response:
+Response (event summaries with minimal details):
 
 ```json
-{"events":[{"id":"event-id","calendar_id":"calendar-id","subject":"Planning","body":"","start":"2026-09-16T12:00:00Z","end":"2026-09-16T13:00:00Z","location":"","is_all_day":false,"organizer":"","attendees":[],"web_link":"","recurrence":"","status":"confirmed"}]}
+{"events":[{"id":"event-id","calendar_id":"calendar-id","subject":"Planning","start":"2026-09-16T12:00:00Z","end":"2026-09-16T13:00:00Z","location":"","is_all_day":false,"organizer":"","web_link":""}]}
 ```
 
-Events are returned for the configured `CALENDAR_NAME` calendar only. Use URL
-encoding for event IDs and other query values.
+Events are returned from all calendars by default. To get full details (including attendees and description), use the `?id={event-id}` parameter or the MCP `get_event` tool.
 
 ### `GET /v1/events?id={event_id}`
 
-Returns one event by its Calendar.app event ID. The `id` parameter selects this
-form of the endpoint and is required for a single-event lookup.
+Retrieves a specific event by ID with complete details including attendees, description, and recurrence information.
 
-Response:
+Response (full event details):
 
 ```json
-{"event":{"id":"event-id","calendar_id":"calendar-id","subject":"Planning","body":"","start":"2026-09-16T12:00:00Z","end":"2026-09-16T13:00:00Z","location":"","is_all_day":false,"organizer":"","attendees":[],"web_link":"","recurrence":"","status":"confirmed"}}
+{"event":{"id":"event-id","calendar_id":"calendar-id","subject":"Planning","body":"Event description","start":"2026-09-16T12:00:00Z","end":"2026-09-16T13:00:00Z","location":"Conference Room","is_all_day":false,"organizer":"John Doe","attendees":[{"name":"Jane Smith","email":"jane@example.com","type":"","status":"accepted"}],"web_link":"","recurrence":"","status":"confirmed"}}
 ```
 
 Each attendee has `name`, `email`, `type`, and `status`. Attendee status is one

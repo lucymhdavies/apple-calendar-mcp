@@ -61,7 +61,7 @@ actor RESTBackend: CalendarDataSource {
     }
 
     func listEvents(calendarName: String, from: Date, to: Date) async throws -> [CalendarEvent] {
-        struct Response: Decodable { let events: [CalendarEvent] }
+        struct Response: Decodable { let events: [CalendarEventSummary] }
         let base = try await baseURL()
         var comps = URLComponents(
             url: base.appendingPathComponent("v1/events"), resolvingAgainstBaseURL: false)!
@@ -71,7 +71,22 @@ actor RESTBackend: CalendarDataSource {
             URLQueryItem(name: "to", value: fmt.string(from: to)),
         ]
         let body: Response = try await get(comps.url!)
-        return body.events
+        return body.events.map { summary in
+            CalendarEvent(
+                id: summary.id,
+                calendarID: summary.calendarID,
+                subject: summary.subject,
+                body: "",
+                start: summary.start,
+                end: summary.end,
+                location: summary.location,
+                isAllDay: summary.isAllDay,
+                organizer: summary.organizer,
+                attendees: [],
+                webLink: summary.webLink,
+                recurrence: "",
+                status: "")
+        }
     }
 
     func getEvent(calendarName: String, id: String) async throws -> CalendarEvent {

@@ -29,10 +29,12 @@ struct CalendarMCP {
         }
 
         let service: CalendarService
+        let usingEventKit: Bool
         let eventKitBackend = CalendarBackend()
         do {
             try await eventKitBackend.requestAccess()
             service = CalendarService(backend: eventKitBackend, calendarName: calendarName)
+            usingEventKit = true
         } catch {
             Log.message("calendar access denied: \(error.localizedDescription)")
             Log.message("attempting REST fallback via Bonjour...")
@@ -44,16 +46,26 @@ struct CalendarMCP {
                 Darwin.exit(EXIT_FAILURE)
             }
             service = CalendarService(backend: restBackend, calendarName: calendarName)
+            usingEventKit = false
         }
 
+        let version = Bundle.main.infoDictionary?["CalendarMCPBuildRevision"] as? String
+            ?? (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown")
         let server = Server(
-            name: "calendar-api", version: "0.1.5", capabilities: .init(tools: .init()))
+            name: "calendar-api", version: version, capabilities: .init(tools: .init()))
+
+        let backendType = usingEventKit ? "eventkit" : "rest"
+
         await server.withMethodHandler(ListTools.self) { _ in
             .init(tools: toolDefinitions)
         }
         await server.withMethodHandler(CallTool.self) { params in
             do {
-                let output = try await callTool(params, service: service)
+                let output = try await callTool(
+                    params,
+                    service: service,
+                    version: version,
+                    backendType: backendType)
                 return .init(
                     content: [.text(text: output, annotations: nil, _meta: nil)], isError: false)
             } catch {
@@ -90,7 +102,7 @@ private let toolDefinitions = [
     Tool(
         name: "list_events",
         description:
-            "List calendar events overlapping a time range. Defaults to the next 24 hours.",
+            "List calendar events overlapping a time range with minimal details (subject, time, organizer, location). Use get_event to retrieve full details including attendees and description.",
         inputSchema: .object([
             "type": .string("object"),
             "properties": .object([
@@ -143,16 +155,33 @@ private let toolDefinitions = [
                 ]),
             ]),
         ])),
+    Tool(
+        name: "debug_info",
+        description:
+            "Get diagnostic information about the MCP server and backend connection status. Useful for debugging calendar access issues.",
+        inputSchema: .object(["type": .string("object"), "properties": .object([:])])),
 ]
 
-private func callTool(_ params: CallTool.Parameters, service: CalendarService) async throws
-    -> String
+private func callTool(
+    _ params: CallTool.Parameters,
+    service: CalendarService,
+    version: String,
+    backendType: String) async throws -> String
 {
     switch params.name {
+    case "debug_info":
+        let info: [String: String] = [
+            "version": version,
+            "backend": backendType,
+            "note": backendType == "eventkit"
+                ? "Using direct EventKit access to local macOS Calendar"
+                : "Using REST fallback via Bonjour to communicate with local Calendar API"
+        ]
+        return try encode(info)
     case "list_calendars":
         return try encode(["calendars": await service.listCalendars()])
     case "list_events":
-        let events = try await service.listEvents(
+        let events = try await service.listEventsSummaries(
             from: stringArgument(params, key: "from"),
             to: stringArgument(params, key: "to"),
             limit: intArgument(params, key: "limit"))

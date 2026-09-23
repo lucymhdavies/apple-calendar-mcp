@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented here.
 
+## [0.1.6] - 2026-09-23
+
+### Added
+
+- Efficient event summaries for list operations, with full event details available through `get_event`.
+- `debug_info` MCP tool reporting the server version and active EventKit or REST backend.
+
+### Fixed
+
+- REST fallback event listing now decodes the summary payload returned by the Calendar API.
+- REST event listing queries all calendars by default and supports optional calendar filtering.
+
 ## [0.1.5] - 2026-09-22
 
 ### Fixed

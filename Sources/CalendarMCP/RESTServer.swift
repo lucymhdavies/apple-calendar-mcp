@@ -206,7 +206,7 @@ private struct CalendarsResponse: Encodable {
 }
 
 private struct EventsResponse: Encodable {
-    let events: [CalendarEvent]
+    let events: [CalendarEventSummary]
 }
 
 private struct EventResponse: Encodable {
@@ -220,6 +220,7 @@ private struct FreeBusyResponse: Encodable {
 private struct HealthResponse: Encodable {
     let status: String
     let service: String
+    let version: String
 }
 
 private struct HTTPRequest {
@@ -377,7 +378,8 @@ final class RESTServer: @unchecked Sendable {
         let components = try urlComponents(for: request.target)
         switch components.path {
         case "/health":
-            return try encode(HealthResponse(status: "ok", service: "calendar"))
+            let version = Bundle.main.infoDictionary?["CalendarMCPBuildRevision"] as? String ?? "unknown"
+            return try encode(HealthResponse(status: "ok", service: "calendar", version: version))
         case "/v1/calendars":
             return try encode(CalendarsResponse(calendars: await service.listCalendars()))
         case "/v1/events":
@@ -386,7 +388,8 @@ final class RESTServer: @unchecked Sendable {
             }
             return try encode(
                 EventsResponse(
-                    events: try await service.listEvents(
+                    events: try await service.listEventsSummaries(
+                        calendarName: queryValue("calendar", in: components),
                         from: queryValue("from", in: components),
                         to: queryValue("to", in: components),
                         limit: queryValue("limit", in: components).flatMap(Int.init))))
@@ -701,7 +704,8 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
             calendarStatusMenuItem.action = #selector(refreshCalendarStatusFromMenu)
         } else if calendars.contains(where: { $0.name == configuredName }) {
             noCalendarsFound = false
-            calendarStatusMenuItem.title = "✓ Serving: \(configuredName)"
+            let version = Bundle.main.infoDictionary?["CalendarMCPBuildRevision"] as? String ?? "unknown"
+            calendarStatusMenuItem.title = "✓ Serving: \(configuredName) (v\(version))"
             calendarStatusMenuItem.action = nil
         } else {
             noCalendarsFound = true

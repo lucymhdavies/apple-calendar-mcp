@@ -28,6 +28,54 @@ struct CalendarService {
         return events
     }
 
+    func listEventsSummaries(from: String?, to: String?, limit: Int?) async throws -> [CalendarEventSummary] {
+        let start = try date(from, field: "from") ?? Date()
+        let end = try date(to, field: "to") ?? start.addingTimeInterval(24 * 60 * 60)
+        try validateRange(start, end)
+
+        var events = try await backend.listEvents(calendarName: calendarName, from: start, to: end)
+        if let limit, limit > 0, events.count > limit {
+            events = Array(events.prefix(limit))
+        }
+        return events.map { $0.toSummary() }
+    }
+
+    /// Query events from all calendars (or specific calendar if name provided)
+    func listEventsSummaries(
+        calendarName: String?,
+        from: String?,
+        to: String?,
+        limit: Int?
+    ) async throws -> [CalendarEventSummary] {
+        let start = try date(from, field: "from") ?? Date()
+        let end = try date(to, field: "to") ?? start.addingTimeInterval(24 * 60 * 60)
+        try validateRange(start, end)
+
+        var events: [CalendarEvent] = []
+
+        if let name = calendarName {
+            events = try await backend.listEvents(calendarName: name, from: start, to: end)
+        } else {
+            // Query all calendars and merge results, sorted by start time
+            let calendars = await backend.listCalendars()
+            for calendar in calendars {
+                do {
+                    let calEvents = try await backend.listEvents(
+                        calendarName: calendar.name, from: start, to: end)
+                    events.append(contentsOf: calEvents)
+                } catch {
+                    Log.message("failed to query calendar \(calendar.name): \(error.localizedDescription)")
+                }
+            }
+            events.sort { $0.start < $1.start }
+        }
+
+        if let limit, limit > 0, events.count > limit {
+            events = Array(events.prefix(limit))
+        }
+        return events.map { $0.toSummary() }
+    }
+
     func getEvent(id: String?) async throws -> CalendarEvent {
         try await backend.getEvent(calendarName: calendarName, id: id ?? "")
     }

@@ -41,6 +41,41 @@ struct CalendarEvent: Codable {
         case isAllDay = "is_all_day"
         case webLink = "web_link"
     }
+
+    /// Returns a summary version with minimal details (excludes body and attendees)
+    func toSummary() -> CalendarEventSummary {
+        CalendarEventSummary(
+            id: id,
+            calendarID: calendarID,
+            subject: subject,
+            start: start,
+            end: end,
+            location: location,
+            isAllDay: isAllDay,
+            organizer: organizer,
+            webLink: webLink
+        )
+    }
+}
+
+/// Minimal event summary for list operations (excludes body and attendees to reduce payload)
+struct CalendarEventSummary: Codable {
+    let id: String
+    let calendarID: String
+    let subject: String
+    let start: Date
+    let end: Date
+    let location: String
+    let isAllDay: Bool
+    let organizer: String
+    let webLink: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, subject, start, end, location, organizer
+        case calendarID = "calendar_id"
+        case isAllDay = "is_all_day"
+        case webLink = "web_link"
+    }
 }
 
 struct TimeSlot: Codable {

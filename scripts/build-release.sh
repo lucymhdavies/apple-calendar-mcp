@@ -11,6 +11,8 @@ ENTITLEMENTS="$ROOT_DIR/Sources/CalendarMCP/CalendarMCP.entitlements"
 # rebuilds.
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
 BUILD_REVISION=$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD)
+BUILD_TIMESTAMP=$(date -u +"%Y%m%dT%H%M%SZ")
+BUILD_REVISION="$BUILD_REVISION+$BUILD_TIMESTAMP"
 if test -n "$(git -C "$ROOT_DIR" status --porcelain)"; then
 	BUILD_REVISION="$BUILD_REVISION-dirty"
 fi
