@@ -711,24 +711,32 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
         // Disable the menu item while fetching the key
         lanMenuItem.action = nil
         lanMenuItem.title = "Expose API to LAN (loading...)"
+        Log.message("menu: user clicked 'Expose API to LAN', starting 1Password key creation")
 
         Task {
             do {
+                Log.message("menu: calling OnePasswordStore.getOrCreate()")
                 _ = try await OnePasswordStore.getOrCreate()
+                Log.message("menu: OnePasswordStore.getOrCreate() succeeded")
+                
                 lanEnabled = true
                 UserDefaults.standard.set(true, forKey: lanEnabledDefaultsKey)
                 
                 // Update UI on main thread
                 RunLoop.main.perform {
                     MainActor.assumeIsolated {
+                        Log.message("menu: restarting server for LAN mode")
                         self.restartServer()
                         self.showLANKeyMessage()
                     }
                 }
             } catch {
+                Log.message("menu: OnePasswordStore.getOrCreate() failed: \(error.localizedDescription)")
+                
                 // Update UI on main thread with error
                 RunLoop.main.perform {
                     MainActor.assumeIsolated {
+                        Log.message("menu: showing error alert to user")
                         self.showError(error.localizedDescription)
                         self.lanMenuItem.action = #selector(self.toggleLAN)
                         self.lanMenuItem.title = "Expose API to LAN"

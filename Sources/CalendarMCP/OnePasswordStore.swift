@@ -10,6 +10,8 @@ struct OnePasswordStore {
 
     /// Finds existing API key in 1Password or creates a new one if none exists.
     static func getOrCreate() async throws -> String {
+        Log.message("[1password] getOrCreate() called")
+        
         // Try to find existing item by tag
         if let existingKey = try await read() {
             Log.message("[1password] Found existing REST API key")
@@ -20,6 +22,7 @@ struct OnePasswordStore {
         Log.message("[1password] Creating new REST API key")
         let key = generateKey()
         try await create(key: key)
+        Log.message("[1password] Successfully created and stored new key")
         return key
     }
 
@@ -148,6 +151,8 @@ struct OnePasswordStore {
 
     /// Executes an `op` CLI command and returns stdout, stderr, and exit code.
     private static func executeOp(_ arguments: [String]) async throws -> (stdout: String, stderr: String, exitCode: Int32) {
+        Log.message("[1password] executing: op \(arguments.joined(separator: " "))")
+        
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = ["op"] + arguments
@@ -159,7 +164,9 @@ struct OnePasswordStore {
 
         do {
             try process.run()
+            Log.message("[1password] process started, pid=\(process.processIdentifier)")
         } catch {
+            Log.message("[1password] failed to start process: \(error.localizedDescription)")
             throw OnePasswordError.notInstalled
         }
 
@@ -167,6 +174,7 @@ struct OnePasswordStore {
         let startTime = Date()
         while process.isRunning {
             if Date().timeIntervalSince(startTime) > opTimeout {
+                Log.message("[1password] command timed out after \(opTimeout)s, terminating")
                 process.terminate()
                 throw OnePasswordError.timeoutError
             }
@@ -179,6 +187,8 @@ struct OnePasswordStore {
         let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
         let stderr = String(data: stderrData, encoding: .utf8) ?? ""
         let exitCode = process.terminationStatus
+
+        Log.message("[1password] exit code=\(exitCode), stdout=\(stdout.prefix(100)), stderr=\(stderr.prefix(100))")
 
         return (stdout, stderr, exitCode)
     }
