@@ -31,6 +31,10 @@ swift build -c release
 
 The live MCP smoke test uses newline-delimited JSON-RPC over the packaged executable. The REST smoke test uses `curl` against `/health` and `/v1/calendars`.
 
+## Commit Attribution
+
+Every commit containing agent-contributed code must include a `Co-authored-by:` trailer identifying the contributing agent. This applies to all new commits; it does not require rewriting older history.
+
 ## REST Behavior
 
 REST binds to `127.0.0.1:8765` by default. LAN exposure is opt-in from the menu bar item. Enabling LAN exposure persists the preference in `UserDefaults` and stores a generated bearer token in the macOS Keychain. Do not log or commit API keys.
