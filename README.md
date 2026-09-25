@@ -4,7 +4,7 @@ A read-only calendar API for data synced into macOS Calendar.app. It supports MC
 
 ## Setup
 
-1. Sign in to the IBM account in macOS Calendar.app.
+1. Sign in to the calendar account in macOS Calendar.app.
 2. Confirm the calendar appears in Calendar.app.
 3. Open this workspace in VS Code.
 4. Build the Swift server with `./scripts/build-release.sh`.
