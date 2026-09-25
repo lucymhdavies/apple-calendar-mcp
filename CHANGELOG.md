@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented here.
 
+## [0.2.1] - 2026-09-25
+
+### Security
+
+- 1Password CLI command output (stderr and arguments) is no longer written to logs or included in error messages, preventing accidental exposure of secrets.
+
+### Maintenance
+
+- Added an MIT license.
+- Automated GitHub Releases from the changelog when a release tag is pushed.
+- Pinned GitHub Actions dependencies and added Dependabot updates for Actions and Swift packages.
+
 ## [0.2.0] - 2026-09-25
 
 ### Added
