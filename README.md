@@ -166,3 +166,7 @@ To get a stable identity so Calendar access survives rebuilds and direct
 ```bash
 ./scripts/build-release.sh
 ```
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
