@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented here.
 
+## [0.2.0] - 2026-09-25
+
+### Added
+
+- API keys now stored securely in 1Password instead of macOS Keychain.
+- Comprehensive logging for 1Password integration troubleshooting.
+
+### Fixed
+
+- Calendar store now refreshed immediately after permission access is granted, ensuring 1Password integration has immediate access to EventKit data.
+
 ## [0.1.7] - 2026-09-23
 
 ### Maintenance
