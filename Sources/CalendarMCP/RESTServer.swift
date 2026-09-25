@@ -529,6 +529,12 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
         guard !calendarAccessGranted else {
             updateCalendarAccessMenuItem()
             updateStatusIcon(running: server?.isRunning == true)
+            // The backend store may have been created before Calendar access was granted in
+            // an earlier launch. Recreate it before serving requests so it observes the
+            // current EventKit source state.
+            Task.detached { [backend] in
+                await backend.resetStore()
+            }
             return
         }
         guard status == .notDetermined else {
