@@ -4,6 +4,17 @@ import XCTest
 @testable import CalendarMCP
 
 final class MainTests: XCTestCase {
+    func testOnePasswordCommandLogsAndErrorsDoNotExposeSecrets() {
+        let secret = "test-api-key-must-not-appear-in-logs"
+        let logMessage = OnePasswordStore.executionLogMessage(exitCode: 1)
+        let errorMessage = OnePasswordError.commandFailed(exitCode: 1).localizedDescription
+
+        XCTAssertFalse(logMessage.contains(secret))
+        XCTAssertFalse(errorMessage.contains(secret))
+        XCTAssertEqual(logMessage, "[1password] command completed with exit code=1")
+        XCTAssertEqual(errorMessage, "1Password command failed (exit code: 1).")
+    }
+
     func testRESTJSONEncoderIncludesNumericTimezoneOffset() throws {
         struct Timestamp: Encodable {
             let date: Date

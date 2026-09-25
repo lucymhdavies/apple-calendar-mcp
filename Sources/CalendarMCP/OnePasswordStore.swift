@@ -149,9 +149,13 @@ struct OnePasswordStore {
         return key
     }
 
+    static func executionLogMessage(exitCode: Int32) -> String {
+        "[1password] command completed with exit code=\(exitCode)"
+    }
+
     /// Executes an `op` CLI command and returns stdout, stderr, and exit code.
     private static func executeOp(_ arguments: [String]) async throws -> (stdout: String, stderr: String, exitCode: Int32) {
-        Log.message("[1password] executing: op \(arguments.joined(separator: " "))")
+        Log.message("[1password] starting command")
         
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -188,7 +192,7 @@ struct OnePasswordStore {
         let stderr = String(data: stderrData, encoding: .utf8) ?? ""
         let exitCode = process.terminationStatus
 
-        Log.message("[1password] exit code=\(exitCode), stdout=\(stdout.prefix(100)), stderr=\(stderr.prefix(100))")
+        Log.message(executionLogMessage(exitCode: exitCode))
 
         return (stdout, stderr, exitCode)
     }
@@ -232,6 +236,6 @@ struct OnePasswordStore {
             return .timeoutError
         }
 
-        return .commandFailed(exitCode: Int(exitCode), stderr: stderr)
+        return .commandFailed(exitCode: Int(exitCode))
     }
 }
