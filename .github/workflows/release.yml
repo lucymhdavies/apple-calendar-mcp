@@ -25,11 +25,16 @@ jobs:
           # Extract the changelog section for this version
           # Find the section starting with ## [VERSION] and ending at the next ## or end of file
           NOTES=$(awk -v version="$VERSION" '
-            /^## \['"$version"'\]/ {found=1; next}
+            $0 ~ "^## \\[" version "\\]" {found=1; next}
             found && /^## \[/ {exit}
-            found {print}
-          ' CHANGELOG.md | sed '/^$/d' | sed '1d')
-          
+            found {buf = buf $0 "\n"}
+            END {
+              gsub(/^\n+/, "", buf)
+              gsub(/\n+$/, "", buf)
+              printf "%s", buf
+            }
+          ' CHANGELOG.md)
+
           # Handle multi-line output for GitHub Actions
           {
             echo 'notes<<EOF'
