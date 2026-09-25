@@ -25,8 +25,9 @@ defaults for environments without menu-bar interaction.
 
 By default, the API binds only to `127.0.0.1` and does not require
 authentication. Use **Expose API to LAN** in the menu to bind to all local
-interfaces. The app generates a random API key, stores it in the macOS
-Keychain, and shows it for copying. The LAN preference is stored in
+interfaces. The app generates a random API key, stores it in 1Password, and
+shows it for copying. 1Password CLI and desktop-app integration must be
+configured before enabling LAN access. The LAN preference is stored in
 `UserDefaults`, so both the LAN setting and API key persist across app restarts
 and login startup. LAN mode also publishes a Bonjour `_http._tcp` service named
 `CalendarAPI`, allowing clients to discover the current port without relying on
