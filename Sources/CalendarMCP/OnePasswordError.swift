@@ -8,7 +8,7 @@ enum OnePasswordError: Error, LocalizedError {
     case permissionDenied
     case timeoutError
     case parseError(details: String)
-    case commandFailed(exitCode: Int, stderr: String)
+    case commandFailed(exitCode: Int)
 
     var errorDescription: String? {
         switch self {
@@ -26,10 +26,8 @@ enum OnePasswordError: Error, LocalizedError {
             return "1Password operation timed out. Please try again."
         case .parseError(let details):
             return "Failed to parse 1Password response: \(details)"
-        case .commandFailed(let exitCode, let stderr):
-            // Sanitize stderr to avoid logging sensitive information
-            let sanitized = stderr.prefix(200)
-            return "1Password command failed (exit code: \(exitCode)). Error: \(sanitized)"
+        case .commandFailed(let exitCode):
+            return "1Password command failed (exit code: \(exitCode))."
         }
     }
 }
