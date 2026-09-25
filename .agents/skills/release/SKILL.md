@@ -36,5 +36,15 @@ release artifacts deliberately.
 ./scripts/release.sh VERSION --publish
 ```
 
+## GitHub Release Automation
+
+Once the tag is pushed, a GitHub Actions workflow automatically creates a GitHub Release with
+the changelog content extracted from `CHANGELOG.md`. The release notes are populated from the
+`## [VERSION]` section matching the tag.
+
+No additional steps are needed after running the release script with `--publish`.
+
+## Notes
+
 Do not amend or rewrite an existing release tag without explicit approval. Never log or commit
 API keys.
