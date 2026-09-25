@@ -23,8 +23,8 @@ actor RESTBackend: CalendarDataSource {
     /// Cached after first successful discovery.
     private var cachedBaseURL: URL?
 
-    init() {
-        token = try? APIKeyStore.read()
+    init(token: String? = nil) {
+        self.token = token
     }
 
     /// Resolves the Bonjour service once and caches the result for subsequent calls.

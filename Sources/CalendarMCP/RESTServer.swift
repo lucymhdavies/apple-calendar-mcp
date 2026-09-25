@@ -3,7 +3,6 @@ import Darwin
 import EventKit
 import Foundation
 import Network
-import Security
 
 struct RESTConfiguration {
     let host: String
@@ -64,100 +63,6 @@ enum RESTPortStore {
             let port = UInt16(value.trimmingCharacters(in: .whitespacesAndNewlines)), port > 0
         else { return nil }
         return port
-    }
-}
-
-enum APIKeyStore {
-    private static let service = "com.lucymhdavies.CalendarMCP"
-    private static let account = "REST_API_KEY"
-
-    static func getOrCreate() throws -> String {
-        do {
-            if let existing = try read() {
-                return existing
-            }
-        } catch {
-            Log.message(
-                "REST API key read failed; attempting key rotation: \(error.localizedDescription)")
-            _ = deleteIfExists()
-        }
-
-        var bytes = [UInt8](repeating: 0, count: 32)
-        let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        guard status == errSecSuccess else {
-            throw RESTServerError.invalidConfiguration("could not generate REST API key")
-        }
-        let key = Data(bytes).base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-        let addQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecValueData as String: Data(key.utf8),
-        ]
-        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
-        if addStatus == errSecDuplicateItem {
-            let matchQuery: [String: Any] = [
-                kSecClass as String: kSecClassGenericPassword,
-                kSecAttrService as String: service,
-                kSecAttrAccount as String: account,
-            ]
-            let update: [String: Any] = [
-                kSecValueData as String: Data(key.utf8)
-            ]
-            let updateStatus = SecItemUpdate(matchQuery as CFDictionary, update as CFDictionary)
-            guard updateStatus == errSecSuccess else {
-                throw RESTServerError.invalidConfiguration(
-                    "could not store REST API key (\(statusDescription(updateStatus)))")
-            }
-        } else if addStatus != errSecSuccess {
-            throw RESTServerError.invalidConfiguration(
-                "could not store REST API key (\(statusDescription(addStatus)))")
-        }
-        return key
-    }
-
-    static func read() throws -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status != errSecItemNotFound else { return nil }
-        guard status == errSecSuccess, let data = result as? Data else {
-            throw RESTServerError.invalidConfiguration(
-                "could not read REST API key (\(statusDescription(status)))")
-        }
-        guard let key = String(data: data, encoding: .utf8), !key.isEmpty else {
-            throw RESTServerError.invalidConfiguration("REST API key was unreadable")
-        }
-        return key
-    }
-
-    @discardableResult
-    private static func deleteIfExists() -> Bool {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-        let status = SecItemDelete(query as CFDictionary)
-        if status != errSecSuccess && status != errSecItemNotFound {
-            Log.message("REST API key reset failed: \(statusDescription(status))")
-            return false
-        }
-        return status == errSecSuccess
-    }
-
-    private static func statusDescription(_ status: OSStatus) -> String {
-        let message = SecCopyErrorMessageString(status, nil) as String? ?? "unknown"
-        return "\(status) \(message)"
     }
 }
 
@@ -624,6 +529,12 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
         guard !calendarAccessGranted else {
             updateCalendarAccessMenuItem()
             updateStatusIcon(running: server?.isRunning == true)
+            // The backend store may have been created before Calendar access was granted in
+            // an earlier launch. Recreate it before serving requests so it observes the
+            // current EventKit source state.
+            Task.detached { [backend] in
+                await backend.resetStore()
+            }
             return
         }
         guard status == .notDetermined else {
@@ -803,14 +714,41 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
             return
         }
 
-        do {
-            let key = try APIKeyStore.getOrCreate()
-            lanEnabled = true
-            UserDefaults.standard.set(true, forKey: lanEnabledDefaultsKey)
-            restartServer()
-            showLANKey(key)
-        } catch {
-            showError(error.localizedDescription)
+        // Disable the menu item while fetching the key
+        lanMenuItem.action = nil
+        lanMenuItem.title = "Expose API to LAN (loading...)"
+        Log.message("menu: user clicked 'Expose API to LAN', starting 1Password key creation")
+
+        Task {
+            do {
+                Log.message("menu: calling OnePasswordStore.getOrCreate()")
+                _ = try await OnePasswordStore.getOrCreate()
+                Log.message("menu: OnePasswordStore.getOrCreate() succeeded")
+                
+                lanEnabled = true
+                UserDefaults.standard.set(true, forKey: lanEnabledDefaultsKey)
+                
+                // Update UI on main thread
+                RunLoop.main.perform {
+                    MainActor.assumeIsolated {
+                        Log.message("menu: restarting server for LAN mode")
+                        self.restartServer()
+                        self.showLANKeyMessage()
+                    }
+                }
+            } catch {
+                Log.message("menu: OnePasswordStore.getOrCreate() failed: \(error.localizedDescription)")
+                
+                // Update UI on main thread with error
+                RunLoop.main.perform {
+                    MainActor.assumeIsolated {
+                        Log.message("menu: showing error alert to user")
+                        self.showError(error.localizedDescription)
+                        self.lanMenuItem.action = #selector(self.toggleLAN)
+                        self.lanMenuItem.title = "Expose API to LAN"
+                    }
+                }
+            }
         }
     }
 
@@ -828,18 +766,44 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
     private func startServer() {
         let serverConfiguration: RESTConfiguration
         if lanEnabled {
-            do {
-                serverConfiguration = configuration.binding(
-                    host: "0.0.0.0", token: try APIKeyStore.getOrCreate(), port: configuredPort)
-            } catch {
-                showError(error.localizedDescription)
-                return
+            // Need to fetch the token from 1Password asynchronously
+            lanMenuItem.action = nil
+            lanMenuItem.title = "Expose API to LAN (loading...)"
+
+            Task {
+                do {
+                    let token = try await OnePasswordStore.read()
+                    guard let token = token else {
+                        throw OnePasswordError.itemNotFound
+                    }
+
+                    // Update configuration and start server on main thread
+                    RunLoop.main.perform {
+                        MainActor.assumeIsolated {
+                            let config = self.configuration.binding(
+                                host: "0.0.0.0", token: token, port: self.configuredPort)
+                            self.startRESTServer(with: config)
+                        }
+                    }
+                } catch {
+                    RunLoop.main.perform {
+                        MainActor.assumeIsolated {
+                            self.showError(error.localizedDescription)
+                            self.lanMenuItem.action = #selector(self.toggleLAN)
+                            self.lanMenuItem.title = "Expose API to LAN"
+                        }
+                    }
+                }
             }
         } else {
             serverConfiguration = configuration.binding(host: "127.0.0.1", token: nil, port: configuredPort)
+            startRESTServer(with: serverConfiguration)
         }
+    }
+
+    private func startRESTServer(with config: RESTConfiguration) {
         let server = RESTServer(
-            service: service, configuration: serverConfiguration, advertiseBonjour: lanEnabled)
+            service: service, configuration: config, advertiseBonjour: lanEnabled)
         self.server = server
         updateMenu(running: false)
         server.onStateChange = { [weak self, weak server] running in
@@ -869,17 +833,15 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
         startServer()
     }
 
-    private func showLANKey(_ key: String) {
+    private func showLANKeyMessage() {
         let alert = NSAlert()
-        alert.messageText = "LAN API key generated"
+        alert.messageText = "LAN API enabled"
         alert.informativeText =
-            "Copy this key now. Requests from other devices must use it as a Bearer token."
-        alert.accessoryView = NSTextField(labelWithString: key)
-        alert.addButton(withTitle: "Copy Key")
+            "Your API key has been saved in 1Password vault 'Private' with the title 'CalendarMCP REST API Key'.\n\nSearch for this item in 1Password to view or copy the key."
+        alert.addButton(withTitle: "Open 1Password")
         alert.addButton(withTitle: "Done")
         if alert.runModal() == .alertFirstButtonReturn {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(key, forType: .string)
+            NSWorkspace.shared.open(URL(string: "onepassword://")!)
         }
     }
 
