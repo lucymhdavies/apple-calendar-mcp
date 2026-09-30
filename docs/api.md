@@ -135,8 +135,9 @@ The `category` field is one of `out-of-office`, `travel`, `focus-time`, `hold`,
 that precedence order. Absence and focus/admin markers apply only to the current
 user's personal events; hold classification does not use attendee response
 status. One-to-one classification uses an explicit marker or exactly one other
-participant. Internal and external classification uses email domains rather
-than organization or customer names.
+participant. Internal and external classification uses attendee email domains,
+not organizer-only domains, and treats subdomains of the current user's domain
+as internal. It does not use organization or customer names.
 
 The current user's domain is inferred from EventKit participants marked as the
 current user and retained only in memory. If EventKit omits it, an optional

@@ -111,8 +111,8 @@ Event list and detail responses include a derived `category` with one of these v
 - `focus-time`: personal focus or admin blocks with no other participants.
 - `hold`: titles containing a hold or blocker marker.
 - `one-on-one`: an explicit 1:1 marker or exactly one other participant.
-- `external`: participant domains include both the current user's domain and another domain.
-- `internal`: all recognized participant domains match the current user's domain.
+- `external`: attendee email domains include both the current user's domain and at least one other domain.
+- `internal`: all recognized attendee email domains match the current user's domain or one of its subdomains.
 - `uncategorized`: insufficient evidence for another category.
 
 The rules and their precedence are built in. Internal domains are normally inferred from EventKit participants marked as the current user and retained only in memory. If EventKit does not expose that address, an optional private override can be stored outside the repository at `~/Library/Application Support/CalendarMCP/event-categories.json`:

@@ -18,7 +18,7 @@ struct EventCategorizationContext {
     let isCurrentUserOrganizer: Bool
     let hasOrganizer: Bool
     let otherParticipantCount: Int
-    let participantDomains: Set<String>
+    let attendeeDomains: Set<String>
     let currentUserDomains: Set<String>
 
     var isCurrentUsersEvent: Bool {
@@ -64,16 +64,26 @@ enum EventCategorizer {
         }
 
         guard !context.currentUserDomains.isEmpty,
-              !context.participantDomains.isEmpty,
-              !context.participantDomains.isDisjoint(with: context.currentUserDomains)
+              !context.attendeeDomains.isEmpty,
+              context.attendeeDomains.contains(where: {
+                  isCurrentUserDomain($0, currentUserDomains: context.currentUserDomains)
+              })
         else {
             return .uncategorized
         }
 
-        if !context.participantDomains.isSubset(of: context.currentUserDomains) {
+        if context.attendeeDomains.contains(where: {
+            !isCurrentUserDomain($0, currentUserDomains: context.currentUserDomains)
+        }) {
             return .external
         }
         return .internal
+    }
+
+    private static func isCurrentUserDomain(
+        _ domain: String, currentUserDomains: Set<String>
+    ) -> Bool {
+        currentUserDomains.contains { domain == $0 || domain.hasSuffix("." + $0) }
     }
 
     private static func matches(_ value: String, pattern: String) -> Bool {

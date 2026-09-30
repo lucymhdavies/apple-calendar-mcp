@@ -103,20 +103,32 @@ final class EventCategorizerTests: XCTestCase {
         XCTAssertEqual(
             categorize(
                 title: "Project review", otherParticipantCount: 2,
-                participantDomains: ["internal.example", "external.example"],
+                attendeeDomains: ["internal.example", "external.example"],
                 currentUserDomains: ["internal.example"]),
             .external)
         XCTAssertEqual(
             categorize(
                 title: "Team meeting", otherParticipantCount: 2,
-                participantDomains: ["internal.example"],
+                attendeeDomains: ["internal.example"],
                 currentUserDomains: ["internal.example"]),
             .internal)
         XCTAssertEqual(
             categorize(
                 title: "Unknown meeting", otherParticipantCount: 2,
-                participantDomains: ["external.example"]),
+                attendeeDomains: ["external.example"]),
             .uncategorized)
+        XCTAssertEqual(
+            categorize(
+                title: "Internal event", otherParticipantCount: 2,
+                attendeeDomains: ["internal.example", "meetings.internal.example"],
+                currentUserDomains: ["internal.example"]),
+            .internal)
+        XCTAssertEqual(
+            categorize(
+                title: "External customer event", otherParticipantCount: 2,
+                attendeeDomains: ["internal.example", "external.example"],
+                currentUserDomains: ["internal.example"]),
+            .external)
     }
 
     private func categorize(
@@ -126,7 +138,7 @@ final class EventCategorizerTests: XCTestCase {
         isCurrentUserOrganizer: Bool = true,
         hasOrganizer: Bool = true,
         otherParticipantCount: Int = 0,
-        participantDomains: Set<String> = [],
+        attendeeDomains: Set<String> = [],
         currentUserDomains: Set<String> = []
     ) -> EventCategory {
         EventCategorizer.categorize(
@@ -137,7 +149,7 @@ final class EventCategorizerTests: XCTestCase {
                 isCurrentUserOrganizer: isCurrentUserOrganizer,
                 hasOrganizer: hasOrganizer,
                 otherParticipantCount: otherParticipantCount,
-                participantDomains: participantDomains,
+                attendeeDomains: attendeeDomains,
                 currentUserDomains: currentUserDomains))
     }
 }

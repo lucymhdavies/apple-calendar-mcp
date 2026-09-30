@@ -189,12 +189,9 @@ actor CalendarBackend: CalendarDataSource {
         let currentUserIdentities = Set(participants.compactMap { participant in
             participant.isCurrentUser ? participantIdentity(participant) : nil
         })
-        var participantDomains = Set(participants.compactMap {
+        let attendeeDomains = Set((event.attendees ?? []).compactMap {
             EventCategoryConfiguration.domain(fromEmailURL: $0.url)
         })
-        if participants.contains(where: \.isCurrentUser) {
-            participantDomains.formUnion(currentUserDomains)
-        }
         let context = EventCategorizationContext(
             title: event.title ?? "",
             isAllDay: event.isAllDay,
@@ -205,7 +202,7 @@ actor CalendarBackend: CalendarDataSource {
             hasOrganizer: event.organizer != nil,
             otherParticipantCount: otherParticipantCount(
                 in: participants, currentUserIdentities: currentUserIdentities),
-            participantDomains: participantDomains,
+            attendeeDomains: attendeeDomains,
             currentUserDomains: currentUserDomains)
 
         return CalendarEvent(
