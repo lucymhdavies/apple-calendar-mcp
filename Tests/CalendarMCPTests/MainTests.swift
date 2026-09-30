@@ -4,6 +4,40 @@ import XCTest
 @testable import CalendarMCP
 
 final class MainTests: XCTestCase {
+    func testEventSummaryDefaultsMissingCategoryToUncategorized() throws {
+        let json = """
+            {"id":"event-id","calendar_id":"calendar-id","subject":"Planning","start":"1970-01-01T00:00:00Z","end":"1970-01-01T01:00:00Z","location":"","is_all_day":false,"organizer":"","web_link":""}
+            """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let summary = try decoder.decode(CalendarEventSummary.self, from: Data(json.utf8))
+
+        XCTAssertEqual(summary.category, .uncategorized)
+    }
+
+    func testEventDefaultsMissingCategoryToUncategorized() throws {
+        let json = """
+            {"id":"event-id","calendar_id":"calendar-id","subject":"Planning","body":"","start":"1970-01-01T00:00:00Z","end":"1970-01-01T01:00:00Z","location":"","is_all_day":false,"organizer":"","attendees":[],"web_link":"","recurrence":"","status":"confirmed"}
+            """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let event = try decoder.decode(CalendarEvent.self, from: Data(json.utf8))
+
+        XCTAssertEqual(event.category, .uncategorized)
+    }
+
+    func testEventSummaryPreservesDerivedCategory() {
+        let event = CalendarEvent(
+            id: "event-id", calendarID: "calendar-id", subject: "Planning", body: "",
+            start: Date(timeIntervalSince1970: 0), end: Date(timeIntervalSince1970: 3_600),
+            location: "", isAllDay: false, organizer: "", attendees: [], webLink: "",
+            recurrence: "", status: "confirmed", category: .internal)
+
+        XCTAssertEqual(event.toSummary().category, .internal)
+    }
+
     func testOnePasswordCommandLogsAndErrorsDoNotExposeSecrets() {
         let secret = "test-api-key-must-not-appear-in-logs"
         let logMessage = OnePasswordStore.executionLogMessage(exitCode: 1)

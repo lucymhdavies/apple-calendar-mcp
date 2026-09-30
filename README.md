@@ -102,6 +102,35 @@ Bob can use the same workspace MCP server. No Microsoft Graph token or Azure app
 
 Descriptions can contain meeting links, dial-in details, and passcodes. Treat MCP results as private calendar data.
 
+### Event categories
+
+Event list and detail responses include a derived `category` with one of these values:
+
+- `out-of-office`: the current user's own OOO, PTO, annual leave, sick leave, off sick, or holiday event. Someone else's absence is `uncategorized` unless explicitly overridden.
+- `travel`: titles containing a travel, flight, train, airport, or transit marker.
+- `focus-time`: personal focus or admin blocks with no other participants.
+- `hold`: titles containing a hold or blocker marker.
+- `one-on-one`: an explicit 1:1 marker or exactly one other participant.
+- `external`: attendee email domains include both the current user's domain and at least one other domain.
+- `internal`: all recognized attendee email domains match the current user's domain or one of its subdomains.
+- `uncategorized`: insufficient evidence for another category.
+
+The rules and their precedence are built in. Internal domains are normally inferred from EventKit participants marked as the current user and retained only in memory. If EventKit does not expose that address, an optional private override can be stored outside the repository at `~/Library/Application Support/CalendarMCP/event-categories.json`:
+
+The same private file accepts per-event category overrides and an exception history. Overrides are keyed by an event ID for one occurrence or by a recurring series ID for all its occurrences; an exact occurrence override takes precedence over a series override. When an override is applied, the history records only the opaque event ID, detected and selected categories, timestamp, and a generic reason code. It does not store titles, attendees, email addresses, or domains.
+
+```json
+{
+  "internal_email_domains": ["example.com"],
+  "event_category_overrides": {
+    "opaque-event-or-series-id": "external"
+  },
+  "exception_history": []
+}
+```
+
+The file is local, never returned by the API or written to logs, and is saved with owner-only permissions. Missing/stale event IDs are ignored. Without an inferred or configured domain, only `internal` and `external` classification is disabled.
+
 ## REST API
 
 The complete wire-level reference, including JSON schemas, query parameters,

@@ -85,7 +85,8 @@ actor RESTBackend: CalendarDataSource {
                 attendees: [],
                 webLink: summary.webLink,
                 recurrence: "",
-                status: "")
+                status: "",
+                category: summary.category)
         }
     }
 

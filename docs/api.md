@@ -49,7 +49,7 @@ connection details; the API key is separate authentication material.
 
 ## Design Notes
 
-- **List operations return summaries:** Both MCP `list_events` tool and REST `GET /v1/events` return event summaries (minimal details: subject, time, organizer, location) to minimize token usage and network payload.
+- **List operations return summaries:** Both MCP `list_events` tool and REST `GET /v1/events` return event summaries (minimal details: subject, time, organizer, location, derived category) to minimize token usage and network payload.
 - **Full details on demand:** Use MCP `get_event` tool or REST `GET /v1/events?id={id}` to retrieve complete event data including attendee list, description, and recurrence rules.
 
 ## Endpoints
@@ -109,7 +109,7 @@ Query parameters:
 Response (event summaries with minimal details):
 
 ```json
-{"events":[{"id":"event-id","calendar_id":"calendar-id","subject":"Planning","start":"2026-09-16T12:00:00Z","end":"2026-09-16T13:00:00Z","location":"","is_all_day":false,"organizer":"","web_link":""}]}
+{"events":[{"id":"event-id","calendar_id":"calendar-id","subject":"Planning","start":"2026-09-16T12:00:00Z","end":"2026-09-16T13:00:00Z","location":"","is_all_day":false,"organizer":"","web_link":"","category":"internal"}]}
 ```
 
 Events are returned from all calendars by default. To get full details (including attendees and description), use the `?id={event-id}` parameter or the MCP `get_event` tool.
@@ -121,12 +121,52 @@ Retrieves a specific event by ID with complete details including attendees, desc
 Response (full event details):
 
 ```json
-{"event":{"id":"event-id","calendar_id":"calendar-id","subject":"Planning","body":"Event description","start":"2026-09-16T12:00:00Z","end":"2026-09-16T13:00:00Z","location":"Conference Room","is_all_day":false,"organizer":"John Doe","attendees":[{"name":"Jane Smith","email":"jane@example.com","type":"","status":"accepted"}],"web_link":"","recurrence":"","status":"confirmed"}}
+{"event":{"id":"event-id","calendar_id":"calendar-id","subject":"Planning","body":"Event description","start":"2026-09-16T12:00:00Z","end":"2026-09-16T13:00:00Z","location":"Conference Room","is_all_day":false,"organizer":"John Doe","attendees":[{"name":"Jane Smith","email":"jane@example.com","type":"","status":"accepted"}],"web_link":"","recurrence":"","status":"confirmed","category":"internal"}}
 ```
 
 Each attendee has `name`, `email`, `type`, and `status`. Attendee status is one
 of `accepted`, `declined`, `tentative`, or `unknown`. Event status is one of
 `confirmed`, `tentative`, `cancelled`, or `none`.
+
+### Derived event categories
+
+The `category` field is one of `out-of-office`, `travel`, `focus-time`, `hold`,
+`one-on-one`, `external`, `internal`, or `uncategorized`. Classification uses
+that precedence order. Current-user absence markers become `out-of-office`;
+another person's absence marker becomes `uncategorized`. Focus/admin markers
+apply only to the current user's events with no other participants; hold
+classification does not use attendee response status. One-to-one classification
+uses an explicit marker or exactly one other participant. Internal and external classification uses attendee email domains,
+not organizer-only domains, and treats subdomains of the current user's domain
+as internal. It does not use organization or customer names.
+
+The current user's domain is inferred from EventKit participants marked as the
+current user and retained only in memory. If EventKit omits it, an optional
+private override can be placed at
+`~/Library/Application Support/CalendarMCP/event-categories.json`:
+
+The same private file may also contain ID-based category overrides and an
+exception history:
+
+```json
+{
+  "internal_email_domains": ["example.com"],
+  "event_category_overrides": {
+    "opaque-event-or-series-id": "external"
+  },
+  "exception_history": []
+}
+```
+
+An override keyed by an occurrence ID applies only to that occurrence; one keyed
+by a recurring series ID applies to the series. An exact occurrence override
+takes precedence. When an override is applied, the local exception history
+records only the opaque ID, detected/selected category, timestamp, and generic
+reason code. It never records event titles, attendee details, or email domains.
+The file is owner-only, is not returned or logged, and stale IDs are ignored.
+
+The override is not returned or logged. If no current-user domain is available,
+domain-based events remain `uncategorized`; title-based categories still work.
 
 ### `GET /v1/freebusy`
 
