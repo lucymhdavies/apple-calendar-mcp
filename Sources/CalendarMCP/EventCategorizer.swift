@@ -21,9 +21,13 @@ struct EventCategorizationContext {
     let participantDomains: Set<String>
     let currentUserDomains: Set<String>
 
+    var isCurrentUsersEvent: Bool {
+        isCurrentUserOrganizer
+            || (!hasOrganizer && isCalendarWritable && otherParticipantCount == 0)
+    }
+
     var isPersonalEvent: Bool {
-        otherParticipantCount == 0
-            && (isCurrentUserOrganizer || (!hasOrganizer && isCalendarWritable))
+        isCurrentUsersEvent && otherParticipantCount == 0
     }
 }
 
@@ -33,11 +37,12 @@ enum EventCategorizer {
     private static let focusPattern = #"\b(focus|admin)\b"#
     private static let holdPattern = #"\b(hold|blocker)\b"#
     private static let oneOnOnePattern = #"\b(1\s*[:\-]\s*1|1[-\s]+(?:to|on)[-\s]+1|one[-\s]+(?:to|on)[-\s]+one)\b"#
+    private static let groupEventPattern = #"\b(all[-\s]+hands|all[-\s]+teams|ama|q\s*&\s*a|sessions?|talks?|speakers?|kickoffs?|community|workshops?|webinars?|trainings?|town\s*halls?|office\s+hours|farewell|introducing|social\s+hours?)\b"#
 
     static func categorize(_ context: EventCategorizationContext) -> EventCategory {
         let hasAbsenceMarker = matches(context.title, pattern: absencePattern)
 
-        if hasAbsenceMarker && context.isPersonalEvent {
+        if hasAbsenceMarker && context.isCurrentUsersEvent {
             return .outOfOffice
         }
         if matches(context.title, pattern: travelPattern) {
@@ -49,9 +54,12 @@ enum EventCategorizer {
         if matches(context.title, pattern: holdPattern) {
             return .hold
         }
-        if matches(context.title, pattern: oneOnOnePattern)
-            || (!context.isAllDay && !hasAbsenceMarker && context.otherParticipantCount == 1)
-        {
+        let hasOneOnOneMarker = matches(context.title, pattern: oneOnOnePattern)
+        let canInferOneOnOne = !context.isAllDay
+            && !hasAbsenceMarker
+            && !matches(context.title, pattern: groupEventPattern)
+            && context.otherParticipantCount == 1
+        if hasOneOnOneMarker || canInferOneOnOne {
             return .oneOnOne
         }
 

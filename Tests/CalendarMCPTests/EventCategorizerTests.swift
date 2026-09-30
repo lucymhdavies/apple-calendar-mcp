@@ -28,6 +28,9 @@ final class EventCategorizerTests: XCTestCase {
         for title in ["OOO", "PTO", "Annual Leave", "Sick Leave", "Off Sick", "Holiday"] {
             XCTAssertEqual(categorize(title: title), .outOfOffice, title)
         }
+        XCTAssertEqual(
+            categorize(title: "PTO", isAllDay: true, otherParticipantCount: 4),
+            .outOfOffice)
     }
 
     func testTeammateAbsenceAndPublicHolidayAreNotOutOfOffice() {
@@ -69,11 +72,31 @@ final class EventCategorizerTests: XCTestCase {
         XCTAssertEqual(categorize(title: "Catch up", otherParticipantCount: 1), .oneOnOne)
         XCTAssertEqual(categorize(title: "Project 11 review", otherParticipantCount: 4), .uncategorized)
         XCTAssertEqual(
-            categorize(title: "Teammate PTO", isAllDay: true, otherParticipantCount: 1),
+            categorize(
+                title: "Teammate PTO", isAllDay: true,
+                isCurrentUserOrganizer: false, otherParticipantCount: 1),
             .uncategorized)
         XCTAssertEqual(
-            categorize(title: "Teammate OOO", otherParticipantCount: 1),
+            categorize(
+                title: "Teammate OOO", isCurrentUserOrganizer: false,
+                otherParticipantCount: 1),
             .uncategorized)
+    }
+
+    func testGroupEventMarkersSuppressAttendeeCountInference() {
+        for title in [
+            "Enablement session", "Working sessions", "Technology talks", "Product Q&A",
+            "Team kickoff", "Community call", "All-hands", "Customer workshops",
+            "Monthly social hours",
+        ] {
+            XCTAssertEqual(
+                categorize(title: title, otherParticipantCount: 1),
+                .uncategorized,
+                title)
+        }
+        XCTAssertEqual(
+            categorize(title: "Workshop 1:1", otherParticipantCount: 1),
+            .oneOnOne)
     }
 
     func testDomainClassificationRequiresCurrentUserDomainEvidence() {

@@ -186,6 +186,9 @@ actor CalendarBackend: CalendarDataSource {
 
     private func makeEvent(_ event: EKEvent, id: String? = nil) -> CalendarEvent {
         let participants = [event.organizer].compactMap { $0 } + (event.attendees ?? [])
+        let currentUserIdentities = Set(participants.compactMap { participant in
+            participant.isCurrentUser ? participantIdentity(participant) : nil
+        })
         var participantDomains = Set(participants.compactMap {
             EventCategoryConfiguration.domain(fromEmailURL: $0.url)
         })
@@ -196,9 +199,12 @@ actor CalendarBackend: CalendarDataSource {
             title: event.title ?? "",
             isAllDay: event.isAllDay,
             isCalendarWritable: event.calendar.allowsContentModifications,
-            isCurrentUserOrganizer: event.organizer?.isCurrentUser == true,
+            isCurrentUserOrganizer: event.organizer.map {
+                $0.isCurrentUser || currentUserIdentities.contains(participantIdentity($0))
+            } ?? false,
             hasOrganizer: event.organizer != nil,
-            otherParticipantCount: otherParticipantCount(in: participants),
+            otherParticipantCount: otherParticipantCount(
+                in: participants, currentUserIdentities: currentUserIdentities),
             participantDomains: participantDomains,
             currentUserDomains: currentUserDomains)
 
@@ -232,14 +238,24 @@ actor CalendarBackend: CalendarDataSource {
         }
     }
 
-    private func otherParticipantCount(in participants: [EKParticipant]) -> Int {
+    private func otherParticipantCount(
+        in participants: [EKParticipant], currentUserIdentities: Set<String>
+    ) -> Int {
         var identities: Set<String> = []
-        for participant in participants where !participant.isCurrentUser {
-            let identity = participant.url.absoluteString.lowercased()
-            identities.insert(identity.isEmpty ? participant.name?.lowercased() ?? "" : identity)
+        for participant in participants {
+            let identity = participantIdentity(participant)
+            guard !participant.isCurrentUser, !currentUserIdentities.contains(identity) else {
+                continue
+            }
+            identities.insert(identity)
         }
         identities.remove("")
         return identities.count
+    }
+
+    private func participantIdentity(_ participant: EKParticipant) -> String {
+        let identity = participant.url.absoluteString.lowercased()
+        return identity.isEmpty ? participant.name?.lowercased() ?? "" : identity
     }
 
     private func participantStatus(_ status: EKParticipantStatus) -> String {
