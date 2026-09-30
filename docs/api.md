@@ -132,10 +132,11 @@ of `accepted`, `declined`, `tentative`, or `unknown`. Event status is one of
 
 The `category` field is one of `out-of-office`, `travel`, `focus-time`, `hold`,
 `one-on-one`, `external`, `internal`, or `uncategorized`. Classification uses
-that precedence order. Absence and focus/admin markers apply only to the current
-user's personal events; hold classification does not use attendee response
-status. One-to-one classification uses an explicit marker or exactly one other
-participant. Internal and external classification uses attendee email domains,
+that precedence order. Current-user absence markers become `out-of-office`;
+another person's absence marker becomes `uncategorized`. Focus/admin markers
+apply only to the current user's events with no other participants; hold
+classification does not use attendee response status. One-to-one classification
+uses an explicit marker or exactly one other participant. Internal and external classification uses attendee email domains,
 not organizer-only domains, and treats subdomains of the current user's domain
 as internal. It does not use organization or customer names.
 
@@ -144,9 +145,25 @@ current user and retained only in memory. If EventKit omits it, an optional
 private override can be placed at
 `~/Library/Application Support/CalendarMCP/event-categories.json`:
 
+The same private file may also contain ID-based category overrides and an
+exception history:
+
 ```json
-{"internal_email_domains":["example.com"]}
+{
+  "internal_email_domains": ["example.com"],
+  "event_category_overrides": {
+    "opaque-event-or-series-id": "external"
+  },
+  "exception_history": []
+}
 ```
+
+An override keyed by an occurrence ID applies only to that occurrence; one keyed
+by a recurring series ID applies to the series. An exact occurrence override
+takes precedence. When an override is applied, the local exception history
+records only the opaque ID, detected/selected category, timestamp, and generic
+reason code. It never records event titles, attendee details, or email domains.
+The file is owner-only, is not returned or logged, and stale IDs are ignored.
 
 The override is not returned or logged. If no current-user domain is available,
 domain-based events remain `uncategorized`; title-based categories still work.

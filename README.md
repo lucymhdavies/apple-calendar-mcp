@@ -106,7 +106,7 @@ Descriptions can contain meeting links, dial-in details, and passcodes. Treat MC
 
 Event list and detail responses include a derived `category` with one of these values:
 
-- `out-of-office`: the current user's own OOO, PTO, annual leave, sick leave, off sick, or holiday event.
+- `out-of-office`: the current user's own OOO, PTO, annual leave, sick leave, off sick, or holiday event. Someone else's absence is `uncategorized` unless explicitly overridden.
 - `travel`: titles containing a travel, flight, train, airport, or transit marker.
 - `focus-time`: personal focus or admin blocks with no other participants.
 - `hold`: titles containing a hold or blocker marker.
@@ -117,11 +117,19 @@ Event list and detail responses include a derived `category` with one of these v
 
 The rules and their precedence are built in. Internal domains are normally inferred from EventKit participants marked as the current user and retained only in memory. If EventKit does not expose that address, an optional private override can be stored outside the repository at `~/Library/Application Support/CalendarMCP/event-categories.json`:
 
+The same private file accepts per-event category overrides and an exception history. Overrides are keyed by an event ID for one occurrence or by a recurring series ID for all its occurrences; an exact occurrence override takes precedence over a series override. When an override is applied, the history records only the opaque event ID, detected and selected categories, timestamp, and a generic reason code. It does not store titles, attendees, email addresses, or domains.
+
 ```json
-{"internal_email_domains":["example.com"]}
+{
+  "internal_email_domains": ["example.com"],
+  "event_category_overrides": {
+    "opaque-event-or-series-id": "external"
+  },
+  "exception_history": []
+}
 ```
 
-The override is never returned by the API or written to logs. Without an inferred or configured domain, only `internal` and `external` classification is disabled.
+The file is local, never returned by the API or written to logs, and is saved with owner-only permissions. Missing/stale event IDs are ignored. Without an inferred or configured domain, only `internal` and `external` classification is disabled.
 
 ## REST API
 

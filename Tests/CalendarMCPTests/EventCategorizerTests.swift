@@ -24,6 +24,64 @@ final class EventCategorizerTests: XCTestCase {
         XCTAssertTrue(EventCategoryConfiguration.load(from: url).internalEmailDomains.isEmpty)
     }
 
+    func testLegacyConfigurationLoadsWithoutOverrideFields() throws {
+        let data = Data(#"{"internal_email_domains":["internal.example"]}"#.utf8)
+        let configuration = try JSONDecoder().decode(EventCategoryConfiguration.self, from: data)
+
+        XCTAssertEqual(configuration.internalEmailDomains, ["internal.example"])
+        XCTAssertTrue(configuration.eventCategoryOverrides.isEmpty)
+        XCTAssertTrue(configuration.exceptionHistory.isEmpty)
+    }
+
+    func testOccurrenceOverrideTakesPrecedenceOverSeriesOverride() throws {
+        let occurrenceID = EventOccurrenceIdentifier.make(
+            eventIdentifier: "series-id", start: Date(timeIntervalSince1970: 1_000))
+        let configuration = EventCategoryConfiguration(
+            eventCategoryOverrides: [
+                "series-id": .internal,
+                occurrenceID: .external,
+            ])
+
+        XCTAssertEqual(configuration.categoryOverride(for: occurrenceID), .external)
+        XCTAssertEqual(configuration.overrideEntry(for: occurrenceID)?.key, occurrenceID)
+        XCTAssertEqual(
+            configuration.categoryOverride(
+                for: EventOccurrenceIdentifier.make(
+                    eventIdentifier: "series-id", start: Date(timeIntervalSince1970: 2_000))),
+            .internal)
+        XCTAssertEqual(
+            configuration.overrideEntry(
+                for: EventOccurrenceIdentifier.make(
+                    eventIdentifier: "series-id", start: Date(timeIntervalSince1970: 2_000)))?.key,
+            "series-id")
+    }
+
+    func testOverrideLedgerRecordsOnlyOneGenericCorrectionAndPersists() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("event-categories.json")
+        var configuration = EventCategoryConfiguration(
+            internalEmailDomains: ["internal.example"],
+            eventCategoryOverrides: ["opaque-event-id": .external])
+
+        XCTAssertTrue(configuration.recordOverrideIfNeeded(
+            eventID: "opaque-event-id", detected: .internal, override: .external))
+        XCTAssertFalse(configuration.recordOverrideIfNeeded(
+            eventID: "opaque-event-id", detected: .internal, override: .external))
+        try configuration.save(to: url)
+
+        let restored = EventCategoryConfiguration.load(from: url)
+        XCTAssertEqual(restored.internalEmailDomains, ["internal.example"])
+        XCTAssertEqual(restored.categoryOverride(for: "opaque-event-id"), .external)
+        XCTAssertEqual(restored.exceptionHistory.count, 1)
+        XCTAssertEqual(restored.exceptionHistory[0].detectedCategory, .internal)
+        XCTAssertEqual(restored.exceptionHistory[0].category, .external)
+
+        let permissions = try FileManager.default.attributesOfItem(atPath: url.path)
+        XCTAssertEqual(permissions[.posixPermissions] as? Int, 0o600)
+        try FileManager.default.removeItem(at: url.deletingLastPathComponent())
+    }
+
     func testPersonalAbsenceMarkersAreOutOfOffice() {
         for title in ["OOO", "PTO", "Annual Leave", "Sick Leave", "Off Sick", "Holiday"] {
             XCTAssertEqual(categorize(title: title), .outOfOffice, title)
@@ -43,6 +101,13 @@ final class EventCategorizerTests: XCTestCase {
             categorize(
                 title: "Public Holiday", isAllDay: true, isCalendarWritable: false,
                 isCurrentUserOrganizer: false, hasOrganizer: false),
+            .uncategorized)
+        XCTAssertEqual(
+            categorize(
+                title: "Coworker PTO", isAllDay: true, isCurrentUserOrganizer: false,
+                hasOrganizer: true, otherParticipantCount: 4,
+                attendeeDomains: ["internal.example"],
+                currentUserDomains: ["internal.example"]),
             .uncategorized)
     }
 

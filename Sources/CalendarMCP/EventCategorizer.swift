@@ -42,8 +42,8 @@ enum EventCategorizer {
     static func categorize(_ context: EventCategorizationContext) -> EventCategory {
         let hasAbsenceMarker = matches(context.title, pattern: absencePattern)
 
-        if hasAbsenceMarker && context.isCurrentUsersEvent {
-            return .outOfOffice
+        if hasAbsenceMarker {
+            return context.isCurrentUsersEvent ? .outOfOffice : .uncategorized
         }
         if matches(context.title, pattern: travelPattern) {
             return .travel

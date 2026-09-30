@@ -68,8 +68,10 @@ private final class AuthorizationCompletion: @unchecked Sendable {
 actor CalendarBackend: CalendarDataSource {
     private var store = EKEventStore()
     private var currentUserDomains: Set<String>
+    private var categoryConfiguration: EventCategoryConfiguration
 
     init(categoryConfiguration: EventCategoryConfiguration = .load()) {
+        self.categoryConfiguration = categoryConfiguration
         currentUserDomains = categoryConfiguration.internalEmailDomains
     }
 
@@ -185,6 +187,7 @@ actor CalendarBackend: CalendarDataSource {
     }
 
     private func makeEvent(_ event: EKEvent, id: String? = nil) -> CalendarEvent {
+        let eventID = id ?? event.eventIdentifier ?? event.calendarItemIdentifier
         let participants = [event.organizer].compactMap { $0 } + (event.attendees ?? [])
         let currentUserIdentities = Set(participants.compactMap { participant in
             participant.isCurrentUser ? participantIdentity(participant) : nil
@@ -205,8 +208,21 @@ actor CalendarBackend: CalendarDataSource {
             attendeeDomains: attendeeDomains,
             currentUserDomains: currentUserDomains)
 
+        let detectedCategory = EventCategorizer.categorize(context)
+        let category: EventCategory
+        if let override = categoryConfiguration.overrideEntry(for: eventID) {
+            if categoryConfiguration.recordOverrideIfNeeded(
+                eventID: override.key, detected: detectedCategory, override: override.category)
+            {
+                try? categoryConfiguration.save()
+            }
+            category = override.category
+        } else {
+            category = detectedCategory
+        }
+
         return CalendarEvent(
-            id: id ?? event.eventIdentifier ?? event.calendarItemIdentifier,
+            id: eventID,
             calendarID: event.calendar.calendarIdentifier,
             subject: event.title ?? "",
             body: event.notes ?? "",
@@ -221,7 +237,7 @@ actor CalendarBackend: CalendarDataSource {
             webLink: event.url?.absoluteString ?? "",
             recurrence: "",
             status: eventStatus(event.status),
-            category: EventCategorizer.categorize(context)
+            category: category
         )
     }
 
