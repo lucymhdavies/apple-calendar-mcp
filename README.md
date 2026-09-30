@@ -102,6 +102,27 @@ Bob can use the same workspace MCP server. No Microsoft Graph token or Azure app
 
 Descriptions can contain meeting links, dial-in details, and passcodes. Treat MCP results as private calendar data.
 
+### Event categories
+
+Event list and detail responses include a derived `category` with one of these values:
+
+- `out-of-office`: the current user's own OOO, PTO, annual leave, sick leave, off sick, or holiday event.
+- `travel`: titles containing a travel, flight, train, airport, or transit marker.
+- `focus-time`: personal focus or admin blocks with no other participants.
+- `hold`: titles containing a hold or blocker marker.
+- `one-on-one`: an explicit 1:1 marker or exactly one other participant.
+- `external`: participant domains include both the current user's domain and another domain.
+- `internal`: all recognized participant domains match the current user's domain.
+- `uncategorized`: insufficient evidence for another category.
+
+The rules and their precedence are built in. Internal domains are normally inferred from EventKit participants marked as the current user and retained only in memory. If EventKit does not expose that address, an optional private override can be stored outside the repository at `~/Library/Application Support/CalendarMCP/event-categories.json`:
+
+```json
+{"internal_email_domains":["example.com"]}
+```
+
+The override is never returned by the API or written to logs. Without an inferred or configured domain, only `internal` and `external` classification is disabled.
+
 ## REST API
 
 The complete wire-level reference, including JSON schemas, query parameters,

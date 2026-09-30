@@ -102,7 +102,7 @@ private let toolDefinitions = [
     Tool(
         name: "list_events",
         description:
-            "List calendar events overlapping a time range with minimal details (subject, time, organizer, location). Use get_event to retrieve full details including attendees and description.",
+            "List calendar events overlapping a time range with minimal details (subject, time, organizer, location, derived category). Use get_event to retrieve full details including attendees and description.",
         inputSchema: .object([
             "type": .string("object"),
             "properties": .object([

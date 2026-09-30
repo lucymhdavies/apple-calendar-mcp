@@ -67,6 +67,11 @@ private final class AuthorizationCompletion: @unchecked Sendable {
 
 actor CalendarBackend: CalendarDataSource {
     private var store = EKEventStore()
+    private var currentUserDomains: Set<String>
+
+    init(categoryConfiguration: EventCategoryConfiguration = .load()) {
+        currentUserDomains = categoryConfiguration.internalEmailDomains
+    }
 
     func requestAccess() async throws {
         let status = EKEventStore.authorizationStatus(for: .event)
@@ -135,7 +140,9 @@ actor CalendarBackend: CalendarDataSource {
         guard from < to else { return [] }
         let calendar = try calendar(named: calendarName)
         let predicate = store.predicateForEvents(withStart: from, end: to, calendars: [calendar])
-        return store.events(matching: predicate).map { event in
+        let events = store.events(matching: predicate)
+        learnCurrentUserDomains(from: events)
+        return events.map { event in
             let eventIdentifier = event.eventIdentifier ?? event.calendarItemIdentifier
             let id = event.hasRecurrenceRules
                 ? EventOccurrenceIdentifier.make(eventIdentifier: eventIdentifier, start: event.startDate)
@@ -159,12 +166,14 @@ actor CalendarBackend: CalendarDataSource {
             }) else {
                 throw CalendarBackendError.eventNotFound(trimmedID)
             }
+            learnCurrentUserDomains(from: [event])
             return makeEvent(event, id: trimmedID)
         }
 
         guard let event = store.event(withIdentifier: trimmedID), event.calendar.title == calendarName else {
             throw CalendarBackendError.eventNotFound(trimmedID)
         }
+        learnCurrentUserDomains(from: [event])
         return makeEvent(event)
     }
 
@@ -176,7 +185,24 @@ actor CalendarBackend: CalendarDataSource {
     }
 
     private func makeEvent(_ event: EKEvent, id: String? = nil) -> CalendarEvent {
-        CalendarEvent(
+        let participants = [event.organizer].compactMap { $0 } + (event.attendees ?? [])
+        var participantDomains = Set(participants.compactMap {
+            EventCategoryConfiguration.domain(fromEmailURL: $0.url)
+        })
+        if participants.contains(where: \.isCurrentUser) {
+            participantDomains.formUnion(currentUserDomains)
+        }
+        let context = EventCategorizationContext(
+            title: event.title ?? "",
+            isAllDay: event.isAllDay,
+            isCalendarWritable: event.calendar.allowsContentModifications,
+            isCurrentUserOrganizer: event.organizer?.isCurrentUser == true,
+            hasOrganizer: event.organizer != nil,
+            otherParticipantCount: otherParticipantCount(in: participants),
+            participantDomains: participantDomains,
+            currentUserDomains: currentUserDomains)
+
+        return CalendarEvent(
             id: id ?? event.eventIdentifier ?? event.calendarItemIdentifier,
             calendarID: event.calendar.calendarIdentifier,
             subject: event.title ?? "",
@@ -191,8 +217,29 @@ actor CalendarBackend: CalendarDataSource {
             },
             webLink: event.url?.absoluteString ?? "",
             recurrence: "",
-            status: eventStatus(event.status)
+            status: eventStatus(event.status),
+            category: EventCategorizer.categorize(context)
         )
+    }
+
+    private func learnCurrentUserDomains(from events: [EKEvent]) {
+        for event in events {
+            let participants = [event.organizer].compactMap { $0 } + (event.attendees ?? [])
+            currentUserDomains.formUnion(participants.compactMap { participant in
+                guard participant.isCurrentUser else { return nil }
+                return EventCategoryConfiguration.domain(fromEmailURL: participant.url)
+            })
+        }
+    }
+
+    private func otherParticipantCount(in participants: [EKParticipant]) -> Int {
+        var identities: Set<String> = []
+        for participant in participants where !participant.isCurrentUser {
+            let identity = participant.url.absoluteString.lowercased()
+            identities.insert(identity.isEmpty ? participant.name?.lowercased() ?? "" : identity)
+        }
+        identities.remove("")
+        return identities.count
     }
 
     private func participantStatus(_ status: EKParticipantStatus) -> String {
