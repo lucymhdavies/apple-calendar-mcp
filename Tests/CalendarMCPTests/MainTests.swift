@@ -1,3 +1,4 @@
+import EventKit
 import MCP
 import XCTest
 
@@ -14,6 +15,7 @@ final class MainTests: XCTestCase {
         let summary = try decoder.decode(CalendarEventSummary.self, from: Data(json.utf8))
 
         XCTAssertEqual(summary.category, .uncategorized)
+        XCTAssertEqual(summary.responseStatus, "unknown")
     }
 
     func testEventDefaultsMissingCategoryToUncategorized() throws {
@@ -26,6 +28,7 @@ final class MainTests: XCTestCase {
         let event = try decoder.decode(CalendarEvent.self, from: Data(json.utf8))
 
         XCTAssertEqual(event.category, .uncategorized)
+        XCTAssertEqual(event.responseStatus, "unknown")
     }
 
     func testEventSummaryPreservesDerivedCategory() {
@@ -36,6 +39,41 @@ final class MainTests: XCTestCase {
             recurrence: "", status: "confirmed", category: .internal)
 
         XCTAssertEqual(event.toSummary().category, .internal)
+    }
+
+    func testEventResponseStatusMapsParticipantResponses() {
+        XCTAssertEqual(EventResponseStatus.from(.accepted), "accepted")
+        XCTAssertEqual(EventResponseStatus.from(.tentative), "tentative")
+        XCTAssertEqual(EventResponseStatus.from(.declined), "declined")
+        XCTAssertEqual(EventResponseStatus.from(.pending), "unknown")
+        XCTAssertEqual(EventResponseStatus.from(.unknown), "unknown")
+        XCTAssertEqual(EventResponseStatus.from(nil), "unknown")
+    }
+
+    func testEventResponseStatusSurvivesSummaryAndJSONRoundTrips() throws {
+        for responseStatus in ["accepted", "tentative", "declined", "unknown"] {
+            let event = CalendarEvent(
+                id: "event-id", calendarID: "calendar-id", subject: "Planning", body: "",
+                start: Date(timeIntervalSince1970: 0), end: Date(timeIntervalSince1970: 3_600),
+                location: "", isAllDay: false, organizer: "", attendees: [], webLink: "",
+                recurrence: "", status: "confirmed", responseStatus: responseStatus)
+            let encoder = JSONEncoder()
+            let decoder = JSONDecoder()
+            let eventData = try encoder.encode(event)
+            let decodedEvent = try decoder.decode(CalendarEvent.self, from: eventData)
+            XCTAssertEqual(decodedEvent.responseStatus, responseStatus)
+            XCTAssertEqual(decodedEvent.status, "confirmed")
+
+            let summary = event.toSummary()
+            XCTAssertEqual(summary.responseStatus, responseStatus)
+            let summaryData = try encoder.encode(summary)
+            let decodedSummary = try decoder.decode(CalendarEventSummary.self, from: summaryData)
+            XCTAssertEqual(decodedSummary.responseStatus, responseStatus)
+            for data in [eventData, summaryData] {
+                let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+                XCTAssertEqual(json["response_status"] as? String, responseStatus)
+            }
+        }
     }
 
     func testOnePasswordCommandLogsAndErrorsDoNotExposeSecrets() {
@@ -58,7 +96,8 @@ final class MainTests: XCTestCase {
         let data = try restJSONEncoder(timeZone: timeZone).encode(
             Timestamp(date: Date(timeIntervalSince1970: 0)))
 
-        XCTAssertEqual(String(decoding: data, as: UTF8.self), "{\"date\":\"1970-01-01T01:00:00+01:00\"}")
+        XCTAssertEqual(
+            String(decoding: data, as: UTF8.self), "{\"date\":\"1970-01-01T01:00:00+01:00\"}")
     }
 
     func testDateArgumentParsesRFC3339() throws {

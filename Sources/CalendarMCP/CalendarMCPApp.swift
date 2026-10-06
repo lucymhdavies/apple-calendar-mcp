@@ -49,7 +49,8 @@ struct CalendarMCP {
             usingEventKit = false
         }
 
-        let version = Bundle.main.infoDictionary?["CalendarMCPBuildRevision"] as? String
+        let version =
+            Bundle.main.infoDictionary?["CalendarMCPBuildRevision"] as? String
             ?? (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown")
         let server = Server(
             name: "calendar-api", version: version, capabilities: .init(tools: .init()))
@@ -102,7 +103,7 @@ private let toolDefinitions = [
     Tool(
         name: "list_events",
         description:
-            "List calendar events overlapping a time range with minimal details (subject, time, organizer, location, derived category). Use get_event to retrieve full details including attendees and description.",
+            "List calendar events overlapping a time range with minimal details (subject, time, organizer, location, derived category, current user's response_status: accepted, tentative, declined, or unknown). Use get_event to retrieve full details including attendees and description.",
         inputSchema: .object([
             "type": .string("object"),
             "properties": .object([
@@ -166,8 +167,8 @@ private func callTool(
     _ params: CallTool.Parameters,
     service: CalendarService,
     version: String,
-    backendType: String) async throws -> String
-{
+    backendType: String
+) async throws -> String {
     switch params.name {
     case "debug_info":
         let info: [String: String] = [
@@ -175,7 +176,7 @@ private func callTool(
             "backend": backendType,
             "note": backendType == "eventkit"
                 ? "Using direct EventKit access to local macOS Calendar"
-                : "Using REST fallback via Bonjour to communicate with local Calendar API"
+                : "Using REST fallback via Bonjour to communicate with local Calendar API",
         ]
         return try encode(info)
     case "list_calendars":

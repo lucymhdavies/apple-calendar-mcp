@@ -11,7 +11,9 @@ enum CalendarBackendError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .accessDenied: return "Calendar access was denied"
-        case .accessNotDetermined: return "Calendar access has not been granted. Open System Settings → Privacy & Security → Calendars and enable access for CalendarMCP, then restart the MCP server."
+        case .accessNotDetermined:
+            return
+                "Calendar access has not been granted. Open System Settings → Privacy & Security → Calendars and enable access for CalendarMCP, then restart the MCP server."
         case .calendarNotFound(let name): return "calendar \(name.inspect) not found"
         case .eventNotFound(let id): return "event \(id.inspect) not found"
         case .eventIDRequired: return "event ID is required"
@@ -24,6 +26,17 @@ private enum AuthorizationResult {
     case timedOut
 }
 
+enum EventResponseStatus {
+    static func from(_ status: EKParticipantStatus?) -> String {
+        switch status {
+        case .accepted: return "accepted"
+        case .declined: return "declined"
+        case .tentative: return "tentative"
+        default: return "unknown"
+        }
+    }
+}
+
 enum EventOccurrenceIdentifier {
     private static let separator = "@occurrence:"
 
@@ -33,8 +46,8 @@ enum EventOccurrenceIdentifier {
 
     static func parse(_ value: String) -> (eventIdentifier: String, start: Date)? {
         guard let separatorRange = value.range(of: separator),
-              let timestamp = TimeInterval(value[separatorRange.upperBound...]),
-              timestamp.isFinite
+            let timestamp = TimeInterval(value[separatorRange.upperBound...]),
+            timestamp.isFinite
         else {
             return nil
         }
@@ -103,7 +116,9 @@ actor CalendarBackend: CalendarDataSource {
                 }
                 store.requestFullAccessToEvents { granted, error in
                     if let error {
-                        Log.message("requestFullAccessToEvents returned an error: \(error.localizedDescription)")
+                        Log.message(
+                            "requestFullAccessToEvents returned an error: \(error.localizedDescription)"
+                        )
                     }
                     completion.resume(.granted(granted))
                 }
@@ -134,7 +149,9 @@ actor CalendarBackend: CalendarDataSource {
 
     func listCalendars() -> [CalendarInfo] {
         store.calendars(for: .event).map {
-            CalendarInfo(id: $0.calendarIdentifier, name: $0.title, description: "", color: "", canEdit: $0.allowsContentModifications)
+            CalendarInfo(
+                id: $0.calendarIdentifier, name: $0.title, description: "", color: "",
+                canEdit: $0.allowsContentModifications)
         }
     }
 
@@ -146,8 +163,10 @@ actor CalendarBackend: CalendarDataSource {
         learnCurrentUserDomains(from: events)
         return events.map { event in
             let eventIdentifier = event.eventIdentifier ?? event.calendarItemIdentifier
-            let id = event.hasRecurrenceRules
-                ? EventOccurrenceIdentifier.make(eventIdentifier: eventIdentifier, start: event.startDate)
+            let id =
+                event.hasRecurrenceRules
+                ? EventOccurrenceIdentifier.make(
+                    eventIdentifier: eventIdentifier, start: event.startDate)
                 : eventIdentifier
             return makeEvent(event, id: id)
         }
@@ -161,18 +180,23 @@ actor CalendarBackend: CalendarDataSource {
         if let occurrence = EventOccurrenceIdentifier.parse(trimmedID) {
             let searchStart = occurrence.start.addingTimeInterval(-1)
             let searchEnd = occurrence.start.addingTimeInterval(1)
-            let predicate = store.predicateForEvents(withStart: searchStart, end: searchEnd, calendars: [calendar])
-            guard let event = store.events(matching: predicate).first(where: {
-                ($0.eventIdentifier ?? $0.calendarItemIdentifier) == occurrence.eventIdentifier
-                    && $0.startDate == occurrence.start
-            }) else {
+            let predicate = store.predicateForEvents(
+                withStart: searchStart, end: searchEnd, calendars: [calendar])
+            guard
+                let event = store.events(matching: predicate).first(where: {
+                    ($0.eventIdentifier ?? $0.calendarItemIdentifier) == occurrence.eventIdentifier
+                        && $0.startDate == occurrence.start
+                })
+            else {
                 throw CalendarBackendError.eventNotFound(trimmedID)
             }
             learnCurrentUserDomains(from: [event])
             return makeEvent(event, id: trimmedID)
         }
 
-        guard let event = store.event(withIdentifier: trimmedID), event.calendar.title == calendarName else {
+        guard let event = store.event(withIdentifier: trimmedID),
+            event.calendar.title == calendarName
+        else {
             throw CalendarBackendError.eventNotFound(trimmedID)
         }
         learnCurrentUserDomains(from: [event])
@@ -189,12 +213,14 @@ actor CalendarBackend: CalendarDataSource {
     private func makeEvent(_ event: EKEvent, id: String? = nil) -> CalendarEvent {
         let eventID = id ?? event.eventIdentifier ?? event.calendarItemIdentifier
         let participants = [event.organizer].compactMap { $0 } + (event.attendees ?? [])
-        let currentUserIdentities = Set(participants.compactMap { participant in
-            participant.isCurrentUser ? participantIdentity(participant) : nil
-        })
-        let attendeeDomains = Set((event.attendees ?? []).compactMap {
-            EventCategoryConfiguration.domain(fromEmailURL: $0.url)
-        })
+        let currentUserIdentities = Set(
+            participants.compactMap { participant in
+                participant.isCurrentUser ? participantIdentity(participant) : nil
+            })
+        let attendeeDomains = Set(
+            (event.attendees ?? []).compactMap {
+                EventCategoryConfiguration.domain(fromEmailURL: $0.url)
+            })
         let context = EventCategorizationContext(
             title: event.title ?? "",
             isAllDay: event.isAllDay,
@@ -232,11 +258,17 @@ actor CalendarBackend: CalendarDataSource {
             isAllDay: event.isAllDay,
             organizer: event.organizer?.name ?? "",
             attendees: (event.attendees ?? []).map {
-                Attendee(name: $0.name ?? "", email: $0.url.absoluteString.replacingOccurrences(of: "mailto:", with: ""), type: "", status: participantStatus($0.participantStatus))
+                Attendee(
+                    name: $0.name ?? "",
+                    email: $0.url.absoluteString.replacingOccurrences(of: "mailto:", with: ""),
+                    type: "", status: EventResponseStatus.from($0.participantStatus))
             },
             webLink: event.url?.absoluteString ?? "",
             recurrence: "",
             status: eventStatus(event.status),
+            responseStatus: EventResponseStatus.from(
+                ((event.attendees ?? []).first(where: { $0.isCurrentUser })
+                    ?? participants.first(where: { $0.isCurrentUser }))?.participantStatus),
             category: category
         )
     }
@@ -244,10 +276,11 @@ actor CalendarBackend: CalendarDataSource {
     private func learnCurrentUserDomains(from events: [EKEvent]) {
         for event in events {
             let participants = [event.organizer].compactMap { $0 } + (event.attendees ?? [])
-            currentUserDomains.formUnion(participants.compactMap { participant in
-                guard participant.isCurrentUser else { return nil }
-                return EventCategoryConfiguration.domain(fromEmailURL: participant.url)
-            })
+            currentUserDomains.formUnion(
+                participants.compactMap { participant in
+                    guard participant.isCurrentUser else { return nil }
+                    return EventCategoryConfiguration.domain(fromEmailURL: participant.url)
+                })
         }
     }
 
@@ -271,15 +304,6 @@ actor CalendarBackend: CalendarDataSource {
         return identity.isEmpty ? participant.name?.lowercased() ?? "" : identity
     }
 
-    private func participantStatus(_ status: EKParticipantStatus) -> String {
-        switch status {
-        case .accepted: return "accepted"
-        case .declined: return "declined"
-        case .tentative: return "tentative"
-        default: return "unknown"
-        }
-    }
-
     private func eventStatus(_ status: EKEventStatus) -> String {
         switch status {
         case .confirmed: return "confirmed"
@@ -290,8 +314,8 @@ actor CalendarBackend: CalendarDataSource {
     }
 }
 
-private extension String {
-    var inspect: String { "\"\(self.replacingOccurrences(of: "\"", with: "\\\""))\"" }
+extension String {
+    fileprivate var inspect: String { "\"\(self.replacingOccurrences(of: "\"", with: "\\\""))\"" }
 }
 
 extension EKAuthorizationStatus {

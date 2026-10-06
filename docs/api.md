@@ -109,8 +109,14 @@ Query parameters:
 Response (event summaries with minimal details):
 
 ```json
-{"events":[{"id":"event-id","calendar_id":"calendar-id","subject":"Planning","start":"2026-09-16T12:00:00Z","end":"2026-09-16T13:00:00Z","location":"","is_all_day":false,"organizer":"","web_link":"","category":"internal"}]}
+{"events":[{"id":"event-id","calendar_id":"calendar-id","subject":"Planning","start":"2026-09-16T12:00:00Z","end":"2026-09-16T13:00:00Z","location":"","is_all_day":false,"organizer":"","web_link":"","response_status":"accepted","category":"internal"}]}
 ```
+
+Both event summaries and full details include `response_status`: the current
+user's attendance response, one of `accepted`, `tentative`, `declined`, or
+`unknown`. It is `unknown` when EventKit does not identify the current user or
+their response is unavailable or not one of those three responses. Older REST
+responses without this field are also treated as `unknown` by the MCP fallback.
 
 Events are returned from all calendars by default. To get full details (including attendees and description), use the `?id={event-id}` parameter or the MCP `get_event` tool.
 
@@ -121,12 +127,13 @@ Retrieves a specific event by ID with complete details including attendees, desc
 Response (full event details):
 
 ```json
-{"event":{"id":"event-id","calendar_id":"calendar-id","subject":"Planning","body":"Event description","start":"2026-09-16T12:00:00Z","end":"2026-09-16T13:00:00Z","location":"Conference Room","is_all_day":false,"organizer":"John Doe","attendees":[{"name":"Jane Smith","email":"jane@example.com","type":"","status":"accepted"}],"web_link":"","recurrence":"","status":"confirmed","category":"internal"}}
+{"event":{"id":"event-id","calendar_id":"calendar-id","subject":"Planning","body":"Event description","start":"2026-09-16T12:00:00Z","end":"2026-09-16T13:00:00Z","location":"Conference Room","is_all_day":false,"organizer":"John Doe","attendees":[{"name":"Jane Smith","email":"jane@example.com","type":"","status":"accepted"}],"web_link":"","recurrence":"","status":"confirmed","response_status":"accepted","category":"internal"}}
 ```
 
 Each attendee has `name`, `email`, `type`, and `status`. Attendee status is one
 of `accepted`, `declined`, `tentative`, or `unknown`. Event status is one of
-`confirmed`, `tentative`, `cancelled`, or `none`.
+`confirmed`, `tentative`, `cancelled`, or `none`. This event-level `status` is
+separate from the current user's `response_status`.
 
 ### Derived event categories
 

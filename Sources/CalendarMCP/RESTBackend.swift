@@ -1,5 +1,6 @@
 import Foundation
 import Network
+
 // NetServiceBrowser/NetService are deprecated in favour of NWBrowser, but NWBrowser
 // requires a full TCP connection to resolve a port — which stalls on loopback Bonjour
 // services. NetService resolves via DNS-SD SRV records directly and is reliable here.
@@ -86,6 +87,7 @@ actor RESTBackend: CalendarDataSource {
                 webLink: summary.webLink,
                 recurrence: "",
                 status: "",
+                responseStatus: summary.responseStatus,
                 category: summary.category)
         }
     }
@@ -197,7 +199,9 @@ enum RESTBackendError: LocalizedError {
 /// Resolves a Bonjour service to a port using NetService on a dedicated RunLoop thread.
 /// Self-retains until finish() fires so the caller needs no strong reference.
 /// @unchecked Sendable: all mutations on the dedicated thread's RunLoop.
-private final class BonjourDiscovery: NSObject, NetServiceBrowserDelegate, NetServiceDelegate, @unchecked Sendable {
+private final class BonjourDiscovery: NSObject, NetServiceBrowserDelegate, NetServiceDelegate,
+    @unchecked Sendable
+{
     private let serviceName: String
     private let timeout: TimeInterval
     private var continuation: CheckedContinuation<Int, Error>?
@@ -231,7 +235,9 @@ private final class BonjourDiscovery: NSObject, NetServiceBrowserDelegate, NetSe
 
     // MARK: NetServiceBrowserDelegate
 
-    func netServiceBrowser(_ browser: NetServiceBrowser, didFind service: NetService, moreComing: Bool) {
+    func netServiceBrowser(
+        _ browser: NetServiceBrowser, didFind service: NetService, moreComing: Bool
+    ) {
         guard service.name == serviceName else { return }
         self.service = service
         service.delegate = self
@@ -243,7 +249,8 @@ private final class BonjourDiscovery: NSObject, NetServiceBrowserDelegate, NetSe
         finish(.failure(RESTBackendError.serviceNotFound))
     }
 
-    func netServiceBrowser(_ browser: NetServiceBrowser, didNotSearch errorDict: [String: NSNumber]) {
+    func netServiceBrowser(_ browser: NetServiceBrowser, didNotSearch errorDict: [String: NSNumber])
+    {
         finish(.failure(RESTBackendError.serviceNotFound))
     }
 

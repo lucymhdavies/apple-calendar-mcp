@@ -34,19 +34,23 @@ struct CalendarEvent: Codable {
     let webLink: String
     let recurrence: String
     let status: String
+    let responseStatus: String
     let category: EventCategory
 
     enum CodingKeys: String, CodingKey {
-        case id, subject, body, start, end, location, organizer, attendees, recurrence, status, category
+        case id, subject, body, start, end, location, organizer, attendees, recurrence, status,
+            category
         case calendarID = "calendar_id"
         case isAllDay = "is_all_day"
         case webLink = "web_link"
+        case responseStatus = "response_status"
     }
 
     init(
         id: String, calendarID: String, subject: String, body: String, start: Date, end: Date,
         location: String, isAllDay: Bool, organizer: String, attendees: [Attendee],
         webLink: String, recurrence: String, status: String,
+        responseStatus: String = "unknown",
         category: EventCategory = .uncategorized
     ) {
         self.id = id
@@ -62,6 +66,7 @@ struct CalendarEvent: Codable {
         self.webLink = webLink
         self.recurrence = recurrence
         self.status = status
+        self.responseStatus = responseStatus
         self.category = category
     }
 
@@ -80,7 +85,10 @@ struct CalendarEvent: Codable {
         webLink = try container.decode(String.self, forKey: .webLink)
         recurrence = try container.decode(String.self, forKey: .recurrence)
         status = try container.decode(String.self, forKey: .status)
-        category = try container.decodeIfPresent(EventCategory.self, forKey: .category) ?? .uncategorized
+        responseStatus =
+            try container.decodeIfPresent(String.self, forKey: .responseStatus) ?? "unknown"
+        category =
+            try container.decodeIfPresent(EventCategory.self, forKey: .category) ?? .uncategorized
     }
 
     /// Returns a summary version with minimal details (excludes body and attendees)
@@ -95,6 +103,7 @@ struct CalendarEvent: Codable {
             isAllDay: isAllDay,
             organizer: organizer,
             webLink: webLink,
+            responseStatus: responseStatus,
             category: category
         )
     }
@@ -111,6 +120,7 @@ struct CalendarEventSummary: Codable {
     let isAllDay: Bool
     let organizer: String
     let webLink: String
+    let responseStatus: String
     let category: EventCategory
 
     enum CodingKeys: String, CodingKey {
@@ -118,11 +128,13 @@ struct CalendarEventSummary: Codable {
         case calendarID = "calendar_id"
         case isAllDay = "is_all_day"
         case webLink = "web_link"
+        case responseStatus = "response_status"
     }
 
     init(
         id: String, calendarID: String, subject: String, start: Date, end: Date,
         location: String, isAllDay: Bool, organizer: String, webLink: String,
+        responseStatus: String = "unknown",
         category: EventCategory = .uncategorized
     ) {
         self.id = id
@@ -134,6 +146,7 @@ struct CalendarEventSummary: Codable {
         self.isAllDay = isAllDay
         self.organizer = organizer
         self.webLink = webLink
+        self.responseStatus = responseStatus
         self.category = category
     }
 
@@ -148,7 +161,10 @@ struct CalendarEventSummary: Codable {
         isAllDay = try container.decode(Bool.self, forKey: .isAllDay)
         organizer = try container.decode(String.self, forKey: .organizer)
         webLink = try container.decode(String.self, forKey: .webLink)
-        category = try container.decodeIfPresent(EventCategory.self, forKey: .category) ?? .uncategorized
+        responseStatus =
+            try container.decodeIfPresent(String.self, forKey: .responseStatus) ?? "unknown"
+        category =
+            try container.decodeIfPresent(EventCategory.self, forKey: .category) ?? .uncategorized
     }
 }
 
